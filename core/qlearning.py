@@ -1,158 +1,121 @@
 """
-core/qlearning.py - Module Q-Learning remasterisé et dynamique.
+core/neighborhoods.py - Fonctions de voisinage adaptées aux contraintes strictes.
 """
 
-import numpy as np
-from typing import Dict, List, Optional
+from typing import Dict, List, Tuple, Optional
 import random
-from collections import defaultdict
+import copy
+from core.environment import Task
 
-class QLearningAgent:
-    """
-    Agent Q-Learning adaptatif.
-    S'adapte automatiquement aux voisinages disponibles.
-    """
+class NeighborhoodFunction:
+    """Classe de base pour les fonctions de voisinage."""
     
-    def __init__(self, states: List[str], 
-                 alpha: float = 0.1, 
-                 gamma: float = 0.9, 
-                 epsilon: float = 0.3,
-                 epsilon_decay: float = 0.995,
-                 epsilon_min: float = 0.01):
-        
-        # Validation : si aucun état n'est fourni, on met une valeur par défaut,
-        # mais idéalement on doit recevoir la liste des voisinages actifs.
-        self.states = states if states else ['C', 'E'] 
-        self.n_states = len(self.states)
-        self.state_to_idx = {s: i for i, s in enumerate(self.states)}
-        self.idx_to_state = {i: s for i, s in enumerate(self.states)}
-        
-        self.alpha = alpha
-        self.gamma = gamma
-        self.epsilon = epsilon
-        self.epsilon_decay = epsilon_decay
-        self.epsilon_min = epsilon_min
-        
-        self.q_table = np.zeros((self.n_states, self.n_states))
-        self.current_state = random.choice(self.states)
-        
-        self.action_history = []
-        self.reward_history = []
+    def __init__(self, name: str):
+        self.name = name
     
-    def select_action(self, exploit_only: bool = False) -> str:
-        # Si on n'a qu'un seul choix (ex: que E), pas besoin de réfléchir
-        if self.n_states == 1:
-            return self.states[0]
+    def generate(self, solution: Dict[Tuple[int, int], List[Task]], 
+                 skills: List[int], max_ops: int) -> Optional[Dict[Tuple[int, int], List[Task]]]:
+        raise NotImplementedError
 
-        state_idx = self.state_to_idx[self.current_state]
-        
-        if not exploit_only and random.random() < self.epsilon:
-            action_idx = random.randint(0, self.n_states - 1)
-        else:
-            action_idx = np.argmax(self.q_table[state_idx])
-        
-        action = self.idx_to_state[action_idx]
-        self.action_history.append(action)
-        return action
+class NeighborhoodA(NeighborhoodFunction):
+    """Voisinage A: Invalide pour ce dataset strict."""
+    def __init__(self):
+        super().__init__("A - Task Reassignment (Resource Swap)")
     
-    def update(self, action: str, reward: float, next_state: str = None):
-        if action not in self.state_to_idx:
-            return # Sécurité contre des actions invalides
+    def generate(self, solution: Dict[Tuple[int, int], List[Task]], 
+                 skills: List[int], max_ops: int) -> Optional[Dict[Tuple[int, int], List[Task]]]:
+        return None
 
-        state_idx = self.state_to_idx[self.current_state]
-        action_idx = self.state_to_idx[action]
+class NeighborhoodB(NeighborhoodFunction):
+    """Voisinage B: Invalide pour ce dataset strict."""
+    def __init__(self):
+        super().__init__("B - Successive Tasks Reassignment")
+    
+    def generate(self, solution: Dict[Tuple[int, int], List[Task]], 
+                 skills: List[int], max_ops: int) -> Optional[Dict[Tuple[int, int], List[Task]]]:
+        return None
+
+class NeighborhoodC(NeighborhoodFunction):
+    """Voisinage C: Insertion à une autre position dans le MÊME planning (Skill)."""
+    def __init__(self):
+        super().__init__("C - Task Insertion Same Staff")
+    
+    def generate(self, solution: Dict[Tuple[int, int], List[Task]], 
+                 skills: List[int], max_ops: int) -> Optional[Dict[Tuple[int, int], List[Task]]]:
+        new_solution = copy.deepcopy(solution)
+        valid_keys = [key for key, tasks in solution.items() if len(tasks) >= 2]
         
-        if next_state is None:
-            next_state = action
+        if not valid_keys:
+            return None
+        
+        key = random.choice(valid_keys)
+        tasks = new_solution[key]
+        
+        idx_from = random.randint(0, len(tasks) - 1)
+        task = tasks.pop(idx_from)
+        
+        idx_to = random.randint(0, len(tasks)) 
+        tasks.insert(idx_to, task)
+        
+        return new_solution
+
+class NeighborhoodD(NeighborhoodFunction):
+    """Voisinage D: Invalide pour ce dataset strict."""
+    def __init__(self):
+        super().__init__("D - Swap Different Staff")
+    
+    def generate(self, solution: Dict[Tuple[int, int], List[Task]], 
+                 skills: List[int], max_ops: int) -> Optional[Dict[Tuple[int, int], List[Task]]]:
+        return None
+
+class NeighborhoodE(NeighborhoodFunction):
+    """Voisinage E: Swap (échange) de deux tâches dans le MÊME planning."""
+    def __init__(self):
+        super().__init__("E - Swap Same Staff")
+    
+    def generate(self, solution: Dict[Tuple[int, int], List[Task]], 
+                 skills: List[int], max_ops: int) -> Optional[Dict[Tuple[int, int], List[Task]]]:
+        new_solution = copy.deepcopy(solution)
+        valid_keys = [key for key, tasks in solution.items() if len(tasks) >= 2]
+        
+        if not valid_keys:
+            return None
+        
+        key = random.choice(valid_keys)
+        tasks = new_solution[key]
+        
+        i1 = random.randint(0, len(tasks) - 1)
+        i2 = random.randint(0, len(tasks) - 1)
+        while i1 == i2:
+            i2 = random.randint(0, len(tasks) - 1)
             
-        if next_state in self.state_to_idx:
-            next_state_idx = self.state_to_idx[next_state]
-            max_next_q = np.max(self.q_table[next_state_idx])
-        else:
-            max_next_q = 0 # Fallback
+        tasks[i1], tasks[i2] = tasks[i2], tasks[i1]
         
-        old_q = self.q_table[state_idx, action_idx]
-        new_q = old_q + self.alpha * (reward + self.gamma * max_next_q - old_q)
-        self.q_table[state_idx, action_idx] = new_q
-        
-        self.reward_history.append(reward)
-        self.current_state = next_state
+        return new_solution
+
+class NeighborhoodManager:
+    """Gère les voisinages et filtre ceux qui sont inactifs."""
+    def __init__(self):
+        self.neighborhoods = {
+            'A': NeighborhoodA(),
+            'B': NeighborhoodB(),
+            'C': NeighborhoodC(),
+            'D': NeighborhoodD(),
+            'E': NeighborhoodE(),
+        }
+        self.neighborhood_names = list(self.neighborhoods.keys())
     
-    def decay_epsilon(self):
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+    def generate_neighbor(self, solution, name, skills, max_ops):
+        if name not in self.neighborhoods:
+            return None
+        return self.neighborhoods[name].generate(solution, skills, max_ops)
         
-    def reset_state(self, state: str = None):
-        if state and state in self.states:
-            self.current_state = state
-        else:
-            self.current_state = random.choice(self.states)
-            
-    def get_q_table_formatted(self) -> Dict[str, Dict[str, float]]:
-        q_dict = {}
-        for s in self.states:
-            q_dict[s] = {}
-            for a in self.states:
-                idx_s = self.state_to_idx[s]
-                idx_a = self.state_to_idx[a]
-                q_dict[s][a] = float(self.q_table[idx_s, idx_a])
-        return q_dict
-
-
-class AdaptiveNeighborhoodSelector:
-    """
-    Sélecteur qui ne propose QUE les voisinages actifs (C et E).
-    """
-    def __init__(self, alpha: float = 0.1, gamma: float = 0.9, 
-                 epsilon: float = 0.3, reward_scale: float = 1.0):
-        
-        # OPTIMISATION : On restreint explicitement aux voisinages qui fonctionnent
-        # pour le problème strict (Swap et Insertion).
+    def generate_all_neighbors(self, solution, skills, max_ops, n_per_neighborhood=5):
         active_neighborhoods = ['C', 'E']
-        
-        self.q_agent = QLearningAgent(
-            states=active_neighborhoods,
-            alpha=alpha,
-            gamma=gamma,
-            epsilon=epsilon
-        )
-        self.reward_scale = reward_scale
-        self.last_makespan = None
-        self.best_makespan = float('inf')
-        
-        self.neighborhood_stats = defaultdict(lambda: {
-            'calls': 0, 'improvements': 0, 'total_improvement': 0.0
-        })
-    
-    def select_neighborhood(self) -> str:
-        return self.q_agent.select_action()
-    
-    def update_with_result(self, neighborhood: str, new_makespan: float):
-        if self.last_makespan is not None:
-            improvement = self.last_makespan - new_makespan
-            reward = improvement * self.reward_scale
-            if new_makespan < self.best_makespan:
-                reward += 10.0 # Gros bonus pour nouveau record
-                self.best_makespan = new_makespan
-        else:
-            reward = 0.0
-        
-        stats = self.neighborhood_stats[neighborhood]
-        stats['calls'] += 1
-        if reward > 0:
-            stats['improvements'] += 1
-            stats['total_improvement'] += reward
-        
-        self.q_agent.update(neighborhood, reward)
-        self.q_agent.decay_epsilon()
-        self.last_makespan = new_makespan
-    
-    def reset(self, initial_makespan: float = None):
-        self.last_makespan = initial_makespan
-        self.best_makespan = initial_makespan if initial_makespan else float('inf')
-        self.q_agent.reset_state()
-        
-    def get_statistics(self):
-        return dict(self.neighborhood_stats)
-    
-    def get_q_table(self):
-        return self.q_agent.get_q_table_formatted()
+        all_neighbors = []
+        for name in active_neighborhoods:
+            for _ in range(n_per_neighborhood):
+                neigh = self.generate_neighbor(solution, name, skills, max_ops)
+                if neigh:
+                    all_neighbors.append((neigh, name))
+        return all_neighbors
