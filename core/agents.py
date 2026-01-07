@@ -137,7 +137,7 @@ class GeneticAgent(BaseAgent):
                         child_seq[i] = remaining[pos]
                         pos += 1
                     else:
-                        # Fallback si incohérence (ne devrait pas arriver si structures identiques)
+                        # Fallback si incohérence
                         child_seq[i] = seq1[i] 
                         
             child[key] = child_seq
@@ -154,13 +154,11 @@ class GeneticAgent(BaseAgent):
             neighbor = self.neighborhood_manager.generate_neighbor(
                 mutated, neighborhood, self.env.skills, self.env.max_ops
             )
-            # Si le voisinage est valide (retourne un voisin), on le prend
             if neighbor:
                 return neighbor
-            # Sinon, on retourne la solution non mutée (échec silencieux de la mutation)
             return mutated
         else:
-            # Mutation classique : on tente un swap aléatoire (Voisinage E) sur chaque file
+            # Mutation classique
             for key in mutated:
                 if len(mutated[key]) >= 2 and random.random() < self.mutation_rate:
                     i, j = random.sample(range(len(mutated[key])), 2)
@@ -195,10 +193,9 @@ class GeneticAgent(BaseAgent):
             self.best_solution = self.env.copy_solution(self.current_solution)
             self.best_fitness = self.current_fitness
             
-        # Feedback Q-Learning (Global reward based on current best)
+        # Feedback Q-Learning
         if self.q_selector:
-            # On considère que c'est une action 'réussie' si on améliore
-            self.q_selector.update_with_result('E', self.current_fitness) # 'E' par défaut pour AG
+            self.q_selector.update_with_result('E', self.current_fitness)
             
         self.fitness_history.append(self.current_fitness)
         return self.current_solution, self.current_fitness
@@ -221,20 +218,15 @@ class TabuAgent(BaseAgent):
         
         # Génération des candidats
         if self.use_qlearning and self.q_selector:
-            # Q-Learning guide la génération
             for _ in range(self.candidate_limit):
                 n_name = self.q_selector.select_neighborhood()
                 n_sol = self.neighborhood_manager.generate_neighbor(
                     self.current_solution, n_name, self.env.skills, self.env.max_ops
                 )
                 if n_sol:
-                    # Signature simple du mouvement : hash de la string solution
-                    # (Pour faire mieux, on devrait hacher le delta, mais c'est suffisant ici)
                     move_hash = hash(str(n_sol))
                     candidates.append((n_sol, n_name, move_hash))
         else:
-            # Génération aléatoire parmi les voisinages actifs
-            # On force C et E car A, B, D sont invalides dans ce problème strict
             active_neighbors = ['C', 'E']
             for _ in range(self.candidate_limit):
                 n_name = random.choice(active_neighbors)
@@ -322,7 +314,6 @@ class SimulatedAnnealingAgent(BaseAgent):
         if delta < 0:
             accept = True
         elif self.temperature > self.min_temp:
-            # Probabilité d'acceptation de Boltzmann
             try:
                 prob = math.exp(-delta / self.temperature)
             except OverflowError:
@@ -342,7 +333,6 @@ class SimulatedAnnealingAgent(BaseAgent):
         
         # Feedback Q-Learning
         if self.q_selector:
-            # On donne un feedback positif si accepté et améliorant
             self.q_selector.update_with_result(n_name, self.current_fitness)
             
         self.fitness_history.append(self.current_fitness)
@@ -365,10 +355,8 @@ class MultiAgentSystem:
         
         # Pool de mémoire partagée
         if mode == CollaborationMode.FRIENDS:
-            # EMP Standard avec diversité
             self.shared_memory = SharedMemoryPool(max_size=25, min_distance=2)
         else:
-            # Pool Élite pour le mode Ennemis (juste les meilleures stats/solutions)
             self.shared_memory = ElitePool(max_size=5)
             
         self.global_best_solution: Optional[Solution] = None
@@ -389,7 +377,6 @@ class MultiAgentSystem:
         return agent
 
     def run(self, n_iterations: int, verbose: bool = True) -> Optional[Solution]:
-        # Initialisation
         for agent in self.agents.values():
             agent.initialize()
             sol = agent.get_solution()
@@ -402,28 +389,19 @@ class MultiAgentSystem:
             self.iteration += 1
             
             for agent_id, agent in self.agents.items():
-                # --- Étape de Collaboration ---
                 if self.mode == CollaborationMode.FRIENDS:
-                    # Chance de piocher dans l'EMP pour se diversifier
                     if random.random() < 0.1 and self.shared_memory.solutions:
-                        # On prend une solution de l'EMP
-                        # (Idéalement une solution différente de la sienne)
                         diverse_sol = self.shared_memory.solutions[random.randint(0, len(self.shared_memory.solutions)-1)]
-                        # On injecte cette solution dans l'agent (réinitialisation partielle)
                         agent.set_solution(diverse_sol.sequences, diverse_sol.fitness)
                 
-                # --- Étape d'Optimisation ---
                 new_sol, new_fit = agent.optimize_step()
                 
-                # --- Mise à jour Globale ---
                 if new_fit < self.global_best_fitness:
                     self.global_best_fitness = new_fit
                     self.global_best_solution = agent.get_solution()
                     if verbose:
                         print(f"  > New Best Global: {new_fit} by {agent_id}")
 
-                # --- Partage vers EMP ---
-                # On essaie d'insérer la solution trouvée
                 sol_obj = agent.get_solution()
                 self.shared_memory.insert(sol_obj, self.iteration)
         
