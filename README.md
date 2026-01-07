@@ -139,10 +139,21 @@ This project is based on the presentation:
 - Multi-Agent Systems for optimization (Jin & Liu 2002, Milano & Roli 2004)
 - Hybrid metaheuristics (Fernandes et al. 2009)
 
-## 📝 License
+Please follow good practices: clean code, tests, documentation, and consistent architecture.
 
-MIT License - See LICENSE file for more details.
+## License
 
-## 👥 Authors
+This project is released under the MIT License. See the [LICENSE](#license) file for details.
 
-Master 2 Project - Optimization and Multi-Agent Systems
+## Authors & Acknowledgments
+
+- [Mohammed Berrajaa](https://github.com/medberrajaa) (main author)
+- [Alexandre Gauguet](https://github.com/GAUGUET) (main author)
+- [Hugo Kazzi]() (main author)
+- [Abdallah Lafendi]() (main author)
+- [Edouard Lansiaux](https://github/edlansiaux) (main author)
+- [Aurélien Loison](https://github.com/lsnaurelien) (main author)
+
+Contributors via pull requests, reviews, or ideas
+
+Special thanks to all contributors who help improve this project!
