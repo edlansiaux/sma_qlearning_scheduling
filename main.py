@@ -8,6 +8,7 @@ import random
 import numpy as np
 
 # Imports core
+# Assurez-vous que core.environment, core.agents, etc. sont bien accessibles
 from core.environment import create_default_environment
 from core.agents import MultiAgentSystem, CollaborationMode
 from visualization import plot_gantt
@@ -41,11 +42,12 @@ def run_single_demo():
         # Génération du Gantt
         cmax, task_times, _ = env.evaluate(best_sol.sequences, return_schedule=True)
         try:
-            # On tente d'afficher/sauvegarder le Gantt
+            # On utilise la nouvelle fonction plot_gantt de visualization.py
+            output_file = "gantt_resultat_demo.png"
             plot_gantt(task_times, env.skills, env.num_patients, 
                       title=f"Planning Optimisé (Cmax={cmax})", 
-                      save_path="gantt_resultat.png")
-            print("Gantt sauvegardé sous 'gantt_resultat.png'")
+                      save_path=output_file)
+            print(f"Gantt sauvegardé sous '{output_file}'")
         except Exception as e:
             print(f"Impossible de générer le graphique: {e}")
     else:
@@ -56,17 +58,20 @@ def main():
     
     print("\nQue voulez-vous faire ?")
     print("1. Lancer une démonstration rapide (avec Gantt)")
-    print("2. Lancer le Benchmark complet (Génération des tableaux PDF)")
+    print("2. Lancer le Benchmark complet (Génération des tableaux et courbes)")
     
     choice = input("\nVotre choix (1/2) [1]: ").strip()
     
     if choice == "2":
-        # Import dynamique pour éviter l'exécution au chargement
+        # Import dynamique corrigé pour appeler le script dans core/
         try:
-            import benchmark_tables
+            from core import benchmark_tables
             benchmark_tables.main()
-        except ImportError:
-            print("Erreur: 'benchmark_tables.py' introuvable.")
+        except ImportError as e:
+            print(f"Erreur critique: {e}")
+            print("Vérifiez que le fichier 'core/benchmark_tables.py' existe et que les dépendances sont installées.")
+        except Exception as e:
+            print(f"Erreur lors de l'exécution du benchmark: {e}")
     else:
         run_single_demo()
 
