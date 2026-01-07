@@ -22,12 +22,14 @@ from core.neighborhoods import (
     NeighborhoodManager
 )
 
+# Import corrigé : MarkovDecisionProcess est maintenant disponible
 from core.qlearning import (
     QLearningAgent,
     AdaptiveNeighborhoodSelector,
     MarkovDecisionProcess
 )
 
+# Import corrigé : ElitePool est maintenant disponible
 from core.shared_memory import (
     Solution,
     SharedMemoryPool,
