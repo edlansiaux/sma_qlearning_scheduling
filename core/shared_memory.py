@@ -1,11 +1,11 @@
 """
-core/shared_memory.py - Espace Mémoire Partagé (EMP)
+core/shared_memory.py - Espace Mémoire Partagé (EMP) et ElitePool
 """
 
 from typing import Dict, List, Tuple, Optional, Any
 import copy
 import random
-from core.environment import Task # Import correct
+from core.environment import Task
 
 class Solution:
     def __init__(self, sequences: Dict[Tuple[int, int], List[Task]], 
@@ -103,7 +103,6 @@ class SharedMemoryPool:
                 return True
             elif solution.fitness < worst_fit:
                  # Pas diverse mais améliore le pire -> on peut remplacer le pire
-                 # (Ou remplacer celui dont elle est trop proche, mais restons simple)
                 self._remove_worst()
                 self.solutions.append(solution)
                 self.replacements += 1
@@ -133,3 +132,41 @@ class SharedMemoryPool:
             'rejections_duplicate': self.rejections_duplicate,
             'rejections_diversity': self.rejections_diversity
         }
+
+class ElitePool(SharedMemoryPool):
+    """
+    Pool qui ne garde que les meilleures solutions (mode Compétitif/Ennemis).
+    """
+    def __init__(self, max_size: int = 5):
+        # On désactive la diversité pour ne garder que la performance pure
+        super().__init__(max_size=max_size, min_distance=0, diversity_threshold=0.0)
+    
+    def insert(self, solution: Solution, iteration: int = 0) -> bool:
+        """Insertion simplifiée basée uniquement sur le fitness."""
+        solution.iteration_found = iteration
+        
+        # Vérification doublon fitness (simple) pour éviter surcharge
+        for s in self.solutions:
+            if s.fitness == solution.fitness:
+                # Si même fitness, on vérifie si c'est exactement la même solution
+                if self.calculate_distance(solution.sequences, s.sequences) == 0:
+                    self.rejections_duplicate += 1
+                    return False
+
+        # Si on a de la place
+        if len(self.solutions) < self.max_size:
+            self.solutions.append(solution)
+            self.insertions += 1
+            self.solutions.sort(key=lambda s: s.fitness)
+            return True
+        
+        # Si plein, on compare au pire
+        worst_fit = self.solutions[-1].fitness
+        if solution.fitness < worst_fit:
+            self.solutions.pop() # Enlève le pire (dernier car trié)
+            self.solutions.append(solution)
+            self.solutions.sort(key=lambda s: s.fitness)
+            self.replacements += 1
+            return True
+            
+        return False
