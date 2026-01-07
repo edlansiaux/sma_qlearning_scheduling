@@ -8,7 +8,13 @@ import random
 import copy
 
 # Task: patient_id, operation_stage, skill_id, duration
+
 Task = namedtuple("Task", ["i", "j", "s", "p"])
+
+DEFAULT_NUM_SKILLS = 10
+DEFAULT_SKILLS = [i+1 for i in range(DEFAULT_NUM_SKILLS)]
+DEFAULT_NUM_PATIENTS = 100
+DEFAULT_MAX_OPS = 5
 
 class SchedulingEnvironment:
     def __init__(self, data: Dict, skills: List[int], num_patients: int, max_ops: int):
@@ -84,13 +90,13 @@ class SchedulingEnvironment:
         """Calcule le Makespan (Cmax)."""
         skill_free_time = {s: 0 for s in self.skills}
         task_times = {} 
-        stage_completion = {(i, 0): 0 for i in range(1, self.num_patients + 1)}
+        stage_completion = {(i, j): 0 for i in range(1, self.num_patients + 1) for j in range(0, self.max_ops + 1)}
         
         for j in range(1, self.max_ops + 1):
             for s in self.skills:
                 tasks = sequences.get((s, j), [])
                 for task in tasks:
-                    ready_time_patient = stage_completion[(task.i, j - 1)]
+                    ready_time_patient = stage_completion.get((task.i, j - 1), 0)
                     ready_time_skill = skill_free_time[task.s]
                     
                     start_time = max(ready_time_patient, ready_time_skill)
@@ -114,32 +120,67 @@ class SchedulingEnvironment:
     def copy_solution(self, solution):
         return copy.deepcopy(solution)
 
-# --- DONNÉES EXACTES DE L'IMAGE WHATSAPP ---
-WHATSAPP_IMAGE_DATA = {
-    1: { 1: [(1, 2)], 2: [(1, 1), (2, 1)], 3: [(1, 1), (3, 1)], 4: [(1, 1), (2, 2)], 5: [(4, 1), (5, 2), (6, 1)] },
-    2: { 1: [(2, 1), (3, 1)], 2: [(2, 1), (3, 1)], 3: [(2, 1)], 4: [], 5: [] },
-    3: { 1: [(3, 2)], 2: [(3, 1)], 3: [], 4: [], 5: [] },
-    4: { 1: [(4, 2)], 2: [(5, 1), (6, 1)], 3: [(6, 2)], 4: [(4, 2)], 5: [(1, 1), (2, 1)] },
-    5: { 1: [(2, 2)], 2: [(5, 1)], 3: [(5, 1), (6, 1)], 4: [(4, 1), (5, 1)], 5: [(3, 1)] },
-    6: { 1: [(1, 1)], 2: [(4, 1)], 3: [(6, 1)], 4: [], 5: [] },
-    7: { 1: [(6, 2)], 2: [(1, 1)], 3: [(5, 1), (6, 1)], 4: [(3, 1)], 5: [] },
-    8: { 1: [(3, 1), (5, 1)], 2: [(2, 1), (5, 1)], 3: [(3, 1), (6, 1)], 4: [(6, 1)], 5: [] },
-    9: { 1: [(5, 1)], 2: [(4, 1)], 3: [(1, 1)], 4: [], 5: [] },
-    10: { 1: [(4, 1)], 2: [(4, 1), (5, 1)], 3: [(1, 1), (2, 1)], 4: [(4, 1)], 5: [] }
-}
 
-DEFAULT_SKILLS = [1, 2, 3, 4, 5, 6]
-DEFAULT_NUM_PATIENTS = 10
-DEFAULT_MAX_OPS = 5
+def generate_random_data(
+    num_patients: int = 10,
+    max_ops: int = 5,
+    skills: List[int] = [1, 2, 3, 4, 5, 6],
+    task_probability: float = 0.7,
+    max_tasks_per_op: int = 3,
+    max_duration: int = 3,
+    seed: Optional[int] = None
+) -> Dict:
+    
+    if seed is not None:
+        random.seed(seed)
+    
+    random_data = {}
+    
+    for patient_id in range(1, num_patients + 1):
+        patient_ops = {}
+        
+        for op in range(1, max_ops + 1):
+            # Decide if this operation exists for this patient
+            if random.random() < task_probability:
+                # Decide how many tasks in this operation
+                num_tasks = random.randint(1, max_tasks_per_op)
+                
+                # Select random unique skills for this operation
+                selected_skills = random.sample(skills, k=num_tasks)
+                
+                # Create tasks with random durations
+                tasks = []
+                for skill in selected_skills:
+                    duration = random.randint(1, max_duration)
+                    tasks.append((skill, duration))
+                
+                patient_ops[op] = tasks
+            else:
+                # No tasks for this operation
+                patient_ops[op] = []
+        
+        random_data[patient_id] = patient_ops
+    
+    return random_data
+# --- DONNÉES  ---
+
+DEFAULT_DATA = generate_random_data(seed=42, 
+                                    num_patients=DEFAULT_NUM_PATIENTS, 
+                                    max_ops=DEFAULT_MAX_OPS, 
+                                    skills=DEFAULT_SKILLS, 
+                                    task_probability=0.90
+                                   )
+
 
 # --- ALIAS POUR COMPATIBILITÉ ---
-DEFAULT_DATA = WHATSAPP_IMAGE_DATA
 
 def create_default_environment() -> SchedulingEnvironment:
     """Factory function utilisant les données de l'image."""
     return SchedulingEnvironment(
-        data=WHATSAPP_IMAGE_DATA,
+        data=DEFAULT_DATA,
         skills=DEFAULT_SKILLS,
         num_patients=DEFAULT_NUM_PATIENTS,
         max_ops=DEFAULT_MAX_OPS
     )
+
+print(DEFAULT_DATA)
