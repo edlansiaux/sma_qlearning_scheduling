@@ -148,7 +148,7 @@ This project is released under the MIT License. See the [LICENSE](#license) file
 ## Authors & Acknowledgments
 
 - [Mohammed Berrajaa](https://github.com/medberrajaa) (main author)
-- [Alexandre Gauguet](https://github.com/GAUGUET) (main author)
+- [Guillaume Gauguet](https://github.com/GAUGUET) (main author)
 - [Hugo Kazzi]() (main author)
 - [Abdallah Lafendi]() (main author)
 - [Edouard Lansiaux](https://github/edlansiaux) (main author)
