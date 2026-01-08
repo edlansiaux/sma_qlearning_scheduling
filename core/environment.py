@@ -48,7 +48,7 @@ class SchedulingEnvironment:
                         self.all_tasks.append(t)
                         self.tasks_by_skill_stage[(s, j)].append(t)
 
-    def build_initial_solution(self, random_order: bool = False) -> Dict[Tuple[int, int], List[Task]]:
+    def build_initial_solution(self, random_order: bool = True) -> Dict[Tuple[int, int], List[Task]]:
         """Génère une solution initiale valide."""
         seq = {}
         for s in self.skills:
