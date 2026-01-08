@@ -1,186 +1,122 @@
 """
-core/environment.py - Environnement remasterisé avec données de l'image et validation stricte.
+core/environment.py - Modèle Hypercubique, Temps Discret (5 min) et Contraintes.
 """
-
-from collections import defaultdict, namedtuple
-from typing import Dict, List, Tuple, Optional
-import random
+from typing import Dict, List, Tuple, NamedTuple
 import copy
+import random
 
-# Task: patient_id, operation_stage, skill_id, duration
+# Configuration globale : Discrétisation en intervalles de 5 minutes [cite: 31]
+SLOT_DURATION = 5  
+# Horizon suffisant pour la simulation
+HORIZON_SLOTS = 200 
 
-Task = namedtuple("Task", ["i", "j", "s", "p"])
+class Task(NamedTuple):
+    id: int          
+    patient_id: int
+    op_order: int    # Ordre de l'opération (j)
+    skill_req: int   # Compétence requise (médecin/ressource)
+    duration: int    # En minutes
 
-DEFAULT_NUM_SKILLS = 10
-DEFAULT_SKILLS = [i+1 for i in range(DEFAULT_NUM_SKILLS)]
-DEFAULT_NUM_PATIENTS = 100
-DEFAULT_MAX_OPS = 5
+class Solution:
+    """
+    Représente une solution dans le modèle hypercubique[cite: 9].
+    Structure: dictionnaire mapping (Patient, Op) -> (Staff_ID, Start_Slot)
+    """
+    def __init__(self):
+        self.schedule: Dict[Tuple[int, int], Tuple[int, int]] = {} 
+        self.fitness: float = float('inf')
+        self.is_valid: bool = False
 
 class SchedulingEnvironment:
-    def __init__(self, data: Dict, skills: List[int], num_patients: int, max_ops: int):
-        self.data = data
+    def __init__(self, data: Dict, skills: List[int], num_patients: int):
+        self.data = data 
         self.skills = skills
         self.num_patients = num_patients
-        self.max_ops = max_ops
-        
-        # Structures
-        self.all_tasks: List[Task] = []
-        # Mapping: (Skill, Stage) -> Liste de tâches
-        self.tasks_by_skill_stage: Dict[Tuple[int, int], List[Task]] = defaultdict(list)
-        self.patient_last_stage: Dict[int, int] = {}
-        
-        self._create_tasks()
-    
-    def _create_tasks(self):
-        """Convertit le dictionnaire de données en objets Task."""
-        self.patient_last_stage = {i: 0 for i in range(1, self.num_patients + 1)}
-        
-        for i in range(1, self.num_patients + 1):
-            if i in self.data:
-                for j in range(1, self.max_ops + 1):
-                    ops = self.data[i].get(j, [])
-                    if ops:
-                        # Si l'opération existe, on met à jour la dernière étape connue
-                        self.patient_last_stage[i] = max(self.patient_last_stage[i], j)
-                    
-                    for (s, p) in ops:
-                        t = Task(i=i, j=j, s=s, p=p)
-                        self.all_tasks.append(t)
-                        self.tasks_by_skill_stage[(s, j)].append(t)
+        self.tasks: List[Task] = []
+        self.tasks_map: Dict[Tuple[int, int], Task] = {}
+        self._parse_data()
 
-    def build_initial_solution(self, random_order: bool = False) -> Dict[Tuple[int, int], List[Task]]:
-        """Génère une solution initiale valide."""
-        seq = {}
-        for s in self.skills:
-            # On regroupe toutes les tâches pour cette compétence, peu importe l'étape
-            tasks_for_skill = []
-            for j in range(1, self.max_ops + 1):
-                tasks_for_skill.extend(self.tasks_by_skill_stage.get((s, j), []))
+    def _parse_data(self):
+        tid = 0
+        for pid, ops in self.data.items():
+            for order, task_list in ops.items():
+                if task_list:
+                    # On suppose une tâche principale par étape pour le modèle simplifié
+                    skill, dur = task_list[0]
+                    t = Task(tid, pid, order, skill, dur)
+                    self.tasks.append(t)
+                    self.tasks_map[(pid, order)] = t
+                    tid += 1
+
+    def duration_to_slots(self, minutes: int) -> int:
+        """Convertit la durée en nombre de slots de 5 minutes."""
+        return (minutes + SLOT_DURATION - 1) // SLOT_DURATION
+
+    def build_initial_solution(self) -> Solution:
+        """Génère une solution aléatoire valide respectant les contraintes de précédence."""
+        sol = Solution()
+        # Disponibilité des ressources (Staff -> premier slot libre)
+        staff_availability = {s: 0 for s in self.skills}
+        # Disponibilité des patients (Patient -> premier slot libre)
+        patient_availability = {p: 0 for p in range(1, self.num_patients + 1)}
+
+        # Tri aléatoire des tâches pour la diversité initiale
+        all_tasks = list(self.tasks)
+        random.shuffle(all_tasks)
+        # Tri partiel pour respecter grossièrement l'ordre des opérations
+        all_tasks.sort(key=lambda t: t.op_order)
+        
+        for t in all_tasks:
+            # Allocation d'une ressource (ici simplifiée : staff_req est l'ID du staff)
+            staff_id = t.skill_req 
             
-            if not tasks_for_skill:
-                continue
+            duration_slots = self.duration_to_slots(t.duration)
             
-            if random_order:
-                random.shuffle(tasks_for_skill)
-            else:
-                # Heuristique simple : trier par étape croissante puis par patient
-                tasks_for_skill.sort(key=lambda t: (t.j, t.i))
+            # Début au max des disponibilités (Patient dispo ET Médecin dispo)
+            start_time = max(patient_availability[t.patient_id], staff_availability.get(staff_id, 0))
             
-            for t in tasks_for_skill:
-                key = (t.s, t.j)
-                if key not in seq:
-                    seq[key] = []
-                seq[key].append(t)
-                
-        return seq
-
-    def check_constraints(self, solution: Dict[Tuple[int, int], List[Task]]) -> Tuple[bool, str]:
-        """Vérifie la validité stricte de la solution."""
-        count_tasks = 0
-        for tasks in solution.values():
-            count_tasks += len(tasks)
-        
-        if count_tasks != len(self.all_tasks):
-            return False, f"Nombre de tâches incorrect: {count_tasks} vs {len(self.all_tasks)}"
+            sol.schedule[(t.patient_id, t.op_order)] = (staff_id, start_time)
             
-        return True, "Valide"
-
-    def evaluate(self, sequences: Dict[Tuple[int, int], List[Task]], 
-                 return_schedule: bool = False) -> Tuple[int, Optional[Dict], Optional[Dict]]:
-        """Calcule le Makespan (Cmax)."""
-        skill_free_time = {s: 0 for s in self.skills}
-        task_times = {} 
-        stage_completion = {(i, j): 0 for i in range(1, self.num_patients + 1) for j in range(0, self.max_ops + 1)}
-        
-        for j in range(1, self.max_ops + 1):
-            for s in self.skills:
-                tasks = sequences.get((s, j), [])
-                for task in tasks:
-                    ready_time_patient = stage_completion.get((task.i, j - 1), 0)
-                    ready_time_skill = skill_free_time[task.s]
-                    
-                    start_time = max(ready_time_patient, ready_time_skill)
-                    end_time = start_time + task.p
-                    
-                    skill_free_time[task.s] = end_time
-                    task_times[(task.i, task.j, task.s)] = (start_time, end_time, task.p)
-                    
-                    current_stage_end = stage_completion.get((task.i, j), 0)
-                    stage_completion[(task.i, j)] = max(current_stage_end, end_time)
-
-        makespan = 0
-        for i in range(1, self.num_patients + 1):
-            last_j = self.patient_last_stage[i]
-            makespan = max(makespan, stage_completion[(i, last_j)])
+            finish_time = start_time + duration_slots
+            patient_availability[t.patient_id] = finish_time
+            staff_availability[staff_id] = finish_time
             
-        if return_schedule:
-            return makespan, task_times, stage_completion
-        return makespan, None, None
+        self.evaluate(sol)
+        return sol
 
-    def copy_solution(self, solution):
-        return copy.deepcopy(solution)
-
-
-def generate_random_data(
-    num_patients: int = 10,
-    max_ops: int = 5,
-    skills: List[int] = [1, 2, 3, 4, 5, 6],
-    task_probability: float = 0.7,
-    max_tasks_per_op: int = 3,
-    max_duration: int = 3,
-    seed: Optional[int] = None
-) -> Dict:
-    
-    if seed is not None:
-        random.seed(seed)
-    
-    random_data = {}
-    
-    for patient_id in range(1, num_patients + 1):
-        patient_ops = {}
+    def evaluate(self, solution: Solution) -> float:
+        """Calcule le Makespan (Cmax) en slots."""
+        if not solution.schedule:
+            solution.fitness = float('inf')
+            return float('inf')
+            
+        max_slot = 0
+        for (pid, op), (staff, start) in solution.schedule.items():
+            task = self.tasks_map.get((pid, op))
+            if task:
+                end = start + self.duration_to_slots(task.duration)
+                if end > max_slot:
+                    max_slot = end
         
-        for op in range(1, max_ops + 1):
-            # Decide if this operation exists for this patient
-            if random.random() < task_probability:
-                # Decide how many tasks in this operation
-                num_tasks = random.randint(1, max_tasks_per_op)
-                
-                # Select random unique skills for this operation
-                selected_skills = random.sample(skills, k=num_tasks)
-                
-                # Create tasks with random durations
-                tasks = []
-                for skill in selected_skills:
-                    duration = random.randint(1, max_duration)
-                    tasks.append((skill, duration))
-                
-                patient_ops[op] = tasks
-            else:
-                # No tasks for this operation
-                patient_ops[op] = []
-        
-        random_data[patient_id] = patient_ops
-    
-    return random_data
-# --- DONNÉES  ---
+        solution.fitness = max_slot
+        solution.is_valid = True 
+        return max_slot
 
-DEFAULT_DATA = generate_random_data(seed=42, 
-                                    num_patients=DEFAULT_NUM_PATIENTS, 
-                                    max_ops=DEFAULT_MAX_OPS, 
-                                    skills=DEFAULT_SKILLS, 
-                                    task_probability=0.90
-                                   )
+    def copy_solution(self, solution: Solution) -> Solution:
+        new_sol = Solution()
+        new_sol.schedule = solution.schedule.copy()
+        new_sol.fitness = solution.fitness
+        new_sol.is_valid = solution.is_valid
+        return new_sol
 
-
-# --- ALIAS POUR COMPATIBILITÉ ---
-
-def create_default_environment() -> SchedulingEnvironment:
-    """Factory function utilisant les données de l'image."""
-    return SchedulingEnvironment(
-        data=DEFAULT_DATA,
-        skills=DEFAULT_SKILLS,
-        num_patients=DEFAULT_NUM_PATIENTS,
-        max_ops=DEFAULT_MAX_OPS
-    )
-
-print(DEFAULT_DATA)
+# Générateur de données factices pour le benchmark
+def generate_random_data(num_patients=5, max_ops=3, skills=[1,2,3,4]):
+    data = {}
+    for i in range(1, num_patients+1):
+        data[i] = {}
+        for j in range(1, max_ops+1):
+            if random.random() > 0.1: # 90% de chance d'avoir une tâche
+                skill = random.choice(skills)
+                duration = random.randint(10, 60) # Durée en minutes
+                data[i][j] = [(skill, duration)]
+    return data
