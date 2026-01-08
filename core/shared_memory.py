@@ -1,172 +1,85 @@
 """
-core/shared_memory.py - Espace Mémoire Partagé (EMP) et ElitePool
+core/shared_memory.py - EMP et Algorithme 6 (Contrôle de Diversité)[cite: 535].
 """
+from typing import List
+from core.environment import Solution
 
-from typing import Dict, List, Tuple, Optional, Any
-import copy
-import random
-from core.environment import Task
-
-class Solution:
-    def __init__(self, sequences: Dict[Tuple[int, int], List[Task]], 
-                 fitness: float, agent_id: str = None):
-        self.sequences = sequences
-        self.fitness = fitness
-        self.agent_id = agent_id
-        self.iteration_found = 0
-    
-    def __lt__(self, other):
-        return self.fitness < other.fitness
-
-class SharedMemoryPool:
-    def __init__(self, max_size: int = 20, min_distance: int = 2, diversity_threshold: float = 0.3):
-        self.max_size = max_size
-        self.min_distance = min_distance
-        self.diversity_threshold = diversity_threshold
+class SharedMemory:
+    def __init__(self, max_size=20, min_dist=2, diversity_threshold=0.5):
         self.solutions: List[Solution] = []
-        
-        # Stats
-        self.insertions = 0
-        self.rejections_duplicate = 0
-        self.rejections_diversity = 0
-        self.replacements = 0
-    
-    def calculate_distance(self, sol1: Dict, sol2: Dict) -> int:
+        self.max_size = max_size # MaxSMS [cite: 1107]
+        self.min_dist = min_dist # Paramètre R [cite: 1104]
+        self.dt = diversity_threshold # Paramètre DT [cite: 1106]
+
+    def calculate_distance(self, sol1: Solution, sol2: Solution) -> int:
         """
-        Distance de Hamming adaptée : Compte combien de tâches sont à des positions différentes.
+        Calcule la distance matricielle définie dans le PDF[cite: 572, 1104].
+        "Nombre de créneaux différents contenant des tâches de soins différentes"
         """
-        distance = 0
-        all_keys = set(sol1.keys()) | set(sol2.keys())
+        dist = 0
+        all_keys = set(sol1.schedule.keys()) | set(sol2.schedule.keys())
+        for k in all_keys:
+            v1 = sol1.schedule.get(k)
+            v2 = sol2.schedule.get(k)
+            # Si l'assignation (Staff ou Temps) diffère
+            if v1 != v2: 
+                dist += 1
+        return dist
+
+    def try_insert(self, cs: Solution) -> bool:
+        """
+        Implémentation de l'Algorithme 6: Contrôler la diversité de l'EMP[cite: 535].
+        """
+        nb = len(self.solutions)
         
-        for key in all_keys:
-            tasks1 = sol1.get(key, [])
-            tasks2 = sol2.get(key, [])
-            
-            # Si longueurs différentes, c'est une grosse différence
-            diff_len = abs(len(tasks1) - len(tasks2))
-            distance += diff_len
-            
-            # Comparaison position par position pour la longueur commune
-            min_len = min(len(tasks1), len(tasks2))
-            for k in range(min_len):
-                # On compare l'ID du patient. Si l'ordre change, distance augmente.
-                if tasks1[k].i != tasks2[k].i:
-                    distance += 1
-                    
-        return distance
-    
-    def insert(self, solution: Solution, iteration: int = 0) -> bool:
-        solution.iteration_found = iteration
-        
-        # 1. Doublon exact
+        # 1. Vérification si la solution existe déjà (distance 0) [cite: 558]
         for s in self.solutions:
-            if self.calculate_distance(solution.sequences, s.sequences) == 0:
-                self.rejections_duplicate += 1
+            if self.calculate_distance(cs, s) == 0:
                 return False
-        
-        # 2. Diversité
-        # On compte combien de solutions sont "proches" (< min_distance)
-        close_solutions = 0
+
+        # 2. Calculer le nombre de solutions 'différentes' (distance >= R) [cite: 1125]
+        d_count = 0
         for s in self.solutions:
-            if self.calculate_distance(solution.sequences, s.sequences) < self.min_distance:
-                close_solutions += 1
+            if self.calculate_distance(cs, s) >= self.min_dist:
+                d_count += 1
         
-        is_diverse = True
-        if len(self.solutions) > 0:
-            ratio_close = close_solutions / len(self.solutions)
-            if ratio_close > (1 - self.diversity_threshold): # Trop de voisins proches
-                is_diverse = False
-        
-        # Logique d'insertion (Algorithme 6 du PDF)
-        if len(self.solutions) < self.max_size:
-            if is_diverse:
-                self.solutions.append(solution)
-                self.insertions += 1
-                return True
+        # Logique d'insertion adaptative
+        ratio = d_count / nb if nb > 0 else 1.0
+        inserted = False
+
+        # Si assez de diversité (ratio >= DT) [cite: 1133]
+        if ratio >= self.dt:
+            # Si EMP non plein, on insère
+            if nb < self.max_size:
+                self.solutions.append(cs)
+                inserted = True
             else:
-                # Si non diverse mais excellente fitness, on peut considérer (Aspiration)
-                best_fit = self.get_best_fitness()
-                if solution.fitness < best_fit:
-                    self.solutions.append(solution)
-                    self.insertions += 1
-                    return True
-                self.rejections_diversity += 1
-                return False
+                # Si plein, on regarde si CS est meilleure que la pire solution de l'EMP [cite: 1134]
+                worst_idx = self._get_worst_idx()
+                if worst_idx != -1 and cs.fitness < self.solutions[worst_idx].fitness:
+                     self.solutions.pop(worst_idx) # Éliminer la plus mauvaise [cite: 1137]
+                     self.solutions.append(cs)
+                     inserted = True
         else:
-            # Pool plein
-            worst_fit = self.get_worst_fitness()
-            if solution.fitness < worst_fit and is_diverse:
-                # Remplacer le pire
-                self._remove_worst()
-                self.solutions.append(solution)
-                self.replacements += 1
-                return True
-            elif solution.fitness < worst_fit:
-                 # Pas diverse mais améliore le pire -> on peut remplacer le pire
-                self._remove_worst()
-                self.solutions.append(solution)
-                self.replacements += 1
-                return True
-                
-            self.rejections_diversity += 1
-            return False
+            # Pas assez de diversité, insertion uniquement si très performante
+            worst_idx = self._get_worst_idx()
+            if nb >= self.max_size and worst_idx != -1 and cs.fitness < self.solutions[worst_idx].fitness:
+                self.solutions.pop(worst_idx)
+                self.solutions.append(cs)
+                inserted = True
 
-    def _remove_worst(self):
-        if not self.solutions: return
-        self.solutions.sort(key=lambda s: s.fitness)
-        self.solutions.pop() # Retire le dernier (le plus grand fitness = le pire makespan)
-
-    def get_best_fitness(self):
-        if not self.solutions: return float('inf')
-        return min(s.fitness for s in self.solutions)
-
-    def get_worst_fitness(self):
-        if not self.solutions: return float('inf')
-        return max(s.fitness for s in self.solutions)
-
-    def get_statistics(self):
-        return {
-            'size': len(self.solutions),
-            'global_best_fitness': self.get_best_fitness(), # Clé standardisée
-            'insertions': self.insertions,
-            'rejections_duplicate': self.rejections_duplicate,
-            'rejections_diversity': self.rejections_diversity
-        }
-
-class ElitePool(SharedMemoryPool):
-    """
-    Pool qui ne garde que les meilleures solutions (mode Compétitif/Ennemis).
-    """
-    def __init__(self, max_size: int = 5):
-        # On désactive la diversité pour ne garder que la performance pure
-        super().__init__(max_size=max_size, min_distance=0, diversity_threshold=0.0)
-    
-    def insert(self, solution: Solution, iteration: int = 0) -> bool:
-        """Insertion simplifiée basée uniquement sur le fitness."""
-        solution.iteration_found = iteration
-        
-        # Vérification doublon fitness (simple) pour éviter surcharge
-        for s in self.solutions:
-            if s.fitness == solution.fitness:
-                # Si même fitness, on vérifie si c'est exactement la même solution
-                if self.calculate_distance(solution.sequences, s.sequences) == 0:
-                    self.rejections_duplicate += 1
-                    return False
-
-        # Si on a de la place
-        if len(self.solutions) < self.max_size:
-            self.solutions.append(solution)
-            self.insertions += 1
-            self.solutions.sort(key=lambda s: s.fitness)
-            return True
-        
-        # Si plein, on compare au pire
-        worst_fit = self.solutions[-1].fitness
-        if solution.fitness < worst_fit:
-            self.solutions.pop() # Enlève le pire (dernier car trié)
-            self.solutions.append(solution)
-            self.solutions.sort(key=lambda s: s.fitness)
-            self.replacements += 1
-            return True
+        if inserted:
+            # Toujours garder trié pour faciliter la récupération du meilleur/pire
+            self.solutions.sort(key=lambda x: x.fitness)
             
-        return False
+        return inserted
+
+    def _get_worst_idx(self):
+        if not self.solutions: return -1
+        # On cherche le fitness le plus élevé (minimisation)
+        vals = [s.fitness for s in self.solutions]
+        return vals.index(max(vals))
+
+    def get_best(self):
+        if not self.solutions: return None
+        return self.solutions[0]
