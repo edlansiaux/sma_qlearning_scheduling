@@ -3,60 +3,59 @@ core/benchmark_tables.py - Génération des tableaux comparatifs (Slides 25 & 26
 """
 from core.environment import SchedulingEnvironment, generate_random_data
 from core.agents import MultiAgentSystem
-import random
 
-def run_benchmark():
-    print("Génération des données et exécution des benchmarks...")
-    # Setup environnement test
+def run_benchmark(num_patients=20, iterations=15):
+    """
+    Exécute le benchmark avec des paramètres configurables.
+    """
+    print(f"Génération des données pour {num_patients} patients...")
+    
+    # Setup environnement
     skills = [1, 2, 3, 4]
-    # Scénario moyen avec 20 patients
-    data = generate_random_data(num_patients=20, max_ops=4, skills=skills)
-    env = SchedulingEnvironment(data, skills, 20)
-    ITERATIONS = 15
+    # Génération dynamique basée sur le paramètre num_patients
+    # On ajuste max_ops si nécessaire, mais on garde 4 pour l'instant
+    data = generate_random_data(num_patients=num_patients, max_ops=4, skills=skills)
+    env = SchedulingEnvironment(data, skills, num_patients)
 
     # --- TABLEAU 1: Comparaison SANS collaboration (Slide 25) ---
-    print("\n--- Tableau de comparaison sans collaboration (Slide 25) [cite: 1197] ---")
-    print('"Jour","Nombre de patients",,"Métaheuristique",,,"Métaheuristique Agents Métaheuristique_Agents_Apprentissage"')
+    print("\n--- Tableau de comparaison sans collaboration (Slide 25) ---")
+    print(f'"Jour","Nombre de patients",,"Métaheuristique",,,"Métaheuristique Agents Métaheuristique_Agents_Apprentissage"')
     print(',,"AG","Tabou","RS","Agent_AG Agent_Tabou Agent_RS","Agent_AG Agent_Tabou Agent_RS"')
 
-    # 1. Classique (Simulé par Agent Solo en mode ENNEMIS sans Learning, isolés)
-    ag_solo = MultiAgentSystem(env, [{'id':'AG','type':'AG','learning':False}], mode='ENEMIES').run(ITERATIONS)
-    tabu_solo = MultiAgentSystem(env, [{'id':'Tabu','type':'Tabu','learning':False}], mode='ENEMIES').run(ITERATIONS)
-    rs_solo = MultiAgentSystem(env, [{'id':'RS','type':'RS','learning':False}], mode='ENEMIES').run(ITERATIONS)
+    # 1. Classique (Simulé par Agent Solo en mode ENNEMIS sans Learning)
+    ag_solo = MultiAgentSystem(env, [{'id':'AG','type':'AG','learning':False}], mode='ENEMIES').run(iterations)
+    tabu_solo = MultiAgentSystem(env, [{'id':'Tabu','type':'Tabu','learning':False}], mode='ENEMIES').run(iterations)
+    rs_solo = MultiAgentSystem(env, [{'id':'RS','type':'RS','learning':False}], mode='ENEMIES').run(iterations)
 
-    # 2. Agents Sans Apprentissage (SMA No Learn - Mode Amis pour coopération de base)
+    # 2. Agents Sans Apprentissage (SMA No Learn)
     sma_no_learn = MultiAgentSystem(env, [
         {'id':'1','type':'AG','learning':False},
         {'id':'2','type':'Tabu','learning':False},
         {'id':'3','type':'RS','learning':False}
-    ], mode='FRIENDS').run(ITERATIONS)
+    ], mode='FRIENDS').run(iterations)
 
-    # 3. Agents Avec Apprentissage (SMA Learn - Le coeur du sujet)
+    # 3. Agents Avec Apprentissage (SMA Learn)
     sma_learn = MultiAgentSystem(env, [
         {'id':'1','type':'AG','learning':True},
         {'id':'2','type':'Tabu','learning':True},
         {'id':'3','type':'RS','learning':True}
-    ], mode='FRIENDS').run(ITERATIONS)
+    ], mode='FRIENDS').run(iterations)
 
-    # Affichage ligne format CSV
-    print(f'"J1","20",,"{ag_solo}","{tabu_solo}","{rs_solo}","{sma_no_learn}","{sma_learn}"')
+    print(f'"J1","{num_patients}",,"{ag_solo}","{tabu_solo}","{rs_solo}","{sma_no_learn}","{sma_learn}"')
 
 
     # --- TABLEAU 2: Comparaison AVEC collaboration (Slide 26) ---
-    print("\n\n--- Tableau de comparaison avec collaboration (Slide 26) [cite: 1200] ---")
+    print("\n\n--- Tableau de comparaison avec collaboration (Slide 26) ---")
     print('"Jour","Nb Patients",,,"SMA sans apprentissage",,,,,,"SMA avec apprentissage"')
     print(',,,"Amis",,,,,,"Ennemis"')
     print(',,"AG_Tabou","AG_RS","Tabou_RS",,"AG_Tabou","AG_RS","Tabou_RS"')
     
-    # Configuration des paires d'agents pour tester les interactions
+    # Paires d'agents
     pairs_config = [
-        # Amis Sans Apprentissage
         ([{'id':'1','type':'AG','learning':False},{'id':'2','type':'Tabu','learning':False}], 'FRIENDS'),
         ([{'id':'1','type':'AG','learning':False},{'id':'3','type':'RS','learning':False}], 'FRIENDS'),
         ([{'id':'2','type':'Tabu','learning':False},{'id':'3','type':'RS','learning':False}], 'FRIENDS'),
         
-        # Ennemis Avec Apprentissage (Note: Le titre slide 26 est complexe, 
-        # ici on illustre la colonne "SMA avec apprentissage - Ennemis")
         ([{'id':'1','type':'AG','learning':True},{'id':'2','type':'Tabu','learning':True}], 'ENEMIES'),
         ([{'id':'1','type':'AG','learning':True},{'id':'3','type':'RS','learning':True}], 'ENEMIES'),
         ([{'id':'2','type':'Tabu','learning':True},{'id':'3','type':'RS','learning':True}], 'ENEMIES'),
@@ -64,10 +63,11 @@ def run_benchmark():
     
     results = []
     for conf, mode in pairs_config:
-        res = MultiAgentSystem(env, conf, mode=mode).run(ITERATIONS)
+        res = MultiAgentSystem(env, conf, mode=mode).run(iterations)
         results.append(res)
         
-    print(f'"J1","20",,"{results[0]}","{results[1]}","{results[2]}",,"{results[3]}","{results[4]}","{results[5]}"')
+    print(f'"J1","{num_patients}",,"{results[0]}","{results[1]}","{results[2]}",,"{results[3]}","{results[4]}","{results[5]}"')
 
 if __name__ == "__main__":
-    run_benchmark()
+    # Fallback si exécuté directement sans main.py
+    run_benchmark(20, 15)
