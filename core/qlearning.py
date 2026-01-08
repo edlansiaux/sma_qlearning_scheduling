@@ -1,167 +1,54 @@
 """
-core/qlearning.py - Module Q-Learning remasterisé et dynamique.
+core/qlearning.py - Apprentissage par Renforcement (Q-Learning) pour Auto-Adaptation.
+Basé sur l'Algorithme 3 (Self Adaptive Agent) et l'Algorithme 4 (SelectAction)[cite: 1145, 1181].
 """
-
 import numpy as np
-from typing import Dict, List, Optional
 import random
-from collections import defaultdict
 
-class MarkovDecisionProcess:
-    """
-    Classe représentant le processus de décision de Markov (MDP).
-    Définit la structure des états et des actions pour l'apprentissage.
-    Réintégrée pour assurer la compatibilité avec les imports du système.
-    """
-    def __init__(self, states: List[str], actions: List[str]):
-        self.states = states
-        self.actions = actions
-        
-    def get_possible_actions(self, state: str) -> List[str]:
-        """Retourne les actions possibles depuis un état donné."""
-        return self.actions
-
-class QLearningAgent:
-    """
-    Agent Q-Learning adaptatif.
-    S'adapte automatiquement aux voisinages disponibles.
-    """
-    
-    def __init__(self, states: List[str], 
-                 alpha: float = 0.1, 
-                 gamma: float = 0.9, 
-                 epsilon: float = 0.3,
-                 epsilon_decay: float = 0.995,
-                 epsilon_min: float = 0.01):
-        
-        self.states = states if states else ['C', 'E'] 
-        self.n_states = len(self.states)
-        self.state_to_idx = {s: i for i, s in enumerate(self.states)}
-        self.idx_to_state = {i: s for i, s in enumerate(self.states)}
-        
-        self.alpha = alpha
-        self.gamma = gamma
+class QLearningModel:
+    def __init__(self, actions, alpha=0.1, gamma=0.9, epsilon=0.1):
+        self.actions = actions # ['A', 'B', 'C', 'D', 'E'] [cite: 1047]
+        self.q_table = {} 
+        self.alpha = alpha   # Facteur d'apprentissage [cite: 1149]
+        self.gamma = gamma   # Facteur d'actualisation [cite: 1150]
         self.epsilon = epsilon
-        self.epsilon_decay = epsilon_decay
-        self.epsilon_min = epsilon_min
         
-        self.q_table = np.zeros((self.n_states, self.n_states))
-        self.current_state = random.choice(self.states)
+        # États simplifiés du MDP basés sur l'évolution de la fitness
+        # 0: Amélioration, 1: Stagnation, 2: Dégradation
+        self.states = [0, 1, 2]
         
-        self.action_history = []
-        self.reward_history = []
-    
-    def select_action(self, exploit_only: bool = False) -> str:
-        if self.n_states == 1:
-            return self.states[0]
-
-        state_idx = self.state_to_idx[self.current_state]
-        
-        if not exploit_only and random.random() < self.epsilon:
-            action_idx = random.randint(0, self.n_states - 1)
-        else:
-            action_idx = np.argmax(self.q_table[state_idx])
-        
-        action = self.idx_to_state[action_idx]
-        self.action_history.append(action)
-        return action
-    
-    def update(self, action: str, reward: float, next_state: str = None):
-        if action not in self.state_to_idx:
-            return 
-
-        state_idx = self.state_to_idx[self.current_state]
-        action_idx = self.state_to_idx[action]
-        
-        if next_state is None:
-            next_state = action
-            
-        if next_state in self.state_to_idx:
-            next_state_idx = self.state_to_idx[next_state]
-            max_next_q = np.max(self.q_table[next_state_idx])
-        else:
-            max_next_q = 0 
-        
-        old_q = self.q_table[state_idx, action_idx]
-        new_q = old_q + self.alpha * (reward + self.gamma * max_next_q - old_q)
-        self.q_table[state_idx, action_idx] = new_q
-        
-        self.reward_history.append(reward)
-        self.current_state = next_state
-    
-    def decay_epsilon(self):
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
-        
-    def reset_state(self, state: str = None):
-        if state and state in self.states:
-            self.current_state = state
-        else:
-            self.current_state = random.choice(self.states)
-            
-    def get_q_table_formatted(self) -> Dict[str, Dict[str, float]]:
-        q_dict = {}
+        # Initialisation de la Q-Table [cite: 1154]
         for s in self.states:
-            q_dict[s] = {}
-            for a in self.states:
-                idx_s = self.state_to_idx[s]
-                idx_a = self.state_to_idx[a]
-                q_dict[s][a] = float(self.q_table[idx_s, idx_a])
-        return q_dict
+            self.q_table[s] = {a: 0.0 for a in actions}
 
+    def get_state(self, current_fit, prev_fit):
+        """Détermine l'état s en fonction de l'évolution de la solution."""
+        if prev_fit is None: return 1
+        if current_fit < prev_fit: return 0 # Amélioration
+        if current_fit == prev_fit: return 1 # Stagnation
+        return 2 # Dégradation
 
-class AdaptiveNeighborhoodSelector:
-    """
-    Sélecteur qui ne propose QUE les voisinages actifs (C et E).
-    """
-    def __init__(self, alpha: float = 0.1, gamma: float = 0.9, 
-                 epsilon: float = 0.3, reward_scale: float = 1.0):
-        
-        active_neighborhoods = ['C', 'E']
-        
-        self.q_agent = QLearningAgent(
-            states=active_neighborhoods,
-            alpha=alpha,
-            gamma=gamma,
-            epsilon=epsilon
-        )
-        self.reward_scale = reward_scale
-        self.last_makespan = None
-        self.best_makespan = float('inf')
-        
-        self.neighborhood_stats = defaultdict(lambda: {
-            'calls': 0, 'improvements': 0, 'total_improvement': 0.0
-        })
-    
-    def select_neighborhood(self) -> str:
-        return self.q_agent.select_action()
-    
-    def update_with_result(self, neighborhood: str, new_makespan: float):
-        if self.last_makespan is not None:
-            improvement = self.last_makespan - new_makespan
-            reward = improvement * self.reward_scale
-            if new_makespan < self.best_makespan:
-                reward += 10.0 
-                self.best_makespan = new_makespan
+    def select_action(self, state):
+        """
+        Algorithme 4: SelectAction (e, b)[cite: 1181].
+        Combine exploitation (e-greedy) et exploration aléatoire.
+        """
+        if random.random() < self.epsilon:
+            return random.choice(self.actions) # Exploration [cite: 1192]
         else:
-            reward = 0.0
+            # Exploitation: MaxAction(e) [cite: 1190]
+            # On mélange les actions pour casser les égalités
+            items = list(self.q_table[state].items())
+            random.shuffle(items)
+            return max(items, key=lambda x: x[1])[0]
+
+    def update(self, state, action, reward, next_state):
+        """
+        Mise à jour Q-Learning selon la formule[cite: 991, 1176].
+        Q(s,a) <- Q(s,a) + alpha * (r + gamma * max Q(s', a') - Q(s,a))
+        """
+        current_q = self.q_table[state][action]
+        max_next_q = max(self.q_table[next_state].values())
         
-        stats = self.neighborhood_stats[neighborhood]
-        stats['calls'] += 1
-        if reward > 0:
-            stats['improvements'] += 1
-            stats['total_improvement'] += reward
-        
-        self.q_agent.update(neighborhood, reward)
-        self.q_agent.decay_epsilon()
-        self.last_makespan = new_makespan
-    
-    def reset(self, initial_makespan: float = None):
-        self.last_makespan = initial_makespan
-        self.best_makespan = initial_makespan if initial_makespan else float('inf')
-        self.q_agent.reset_state()
-        
-    def get_statistics(self):
-        return dict(self.neighborhood_stats)
-    
-    def get_q_table(self):
-        return self.q_agent.get_q_table_formatted()
+        new_q = current_q + self.alpha * (reward + self.gamma * max_next_q - current_q)
+        self.q_table[state][action] = new_q
