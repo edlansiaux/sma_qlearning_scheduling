@@ -45,26 +45,35 @@ def run_benchmark(num_patients=20, iterations=15):
 
 
     # --- TABLEAU 2: Comparaison AVEC collaboration (Slide 26) ---
-    print("\n\n--- Tableau de comparaison avec collaboration (Slide 26) ---")
-    print('"Jour","Nb Patients",,,"SMA sans apprentissage",,,,,,"SMA avec apprentissage"')
-    print(',,,"Amis",,,,,,"Ennemis"')
-    print(',,"AG_Tabou","AG_RS","Tabou_RS",,"AG_Tabou","AG_RS","Tabou_RS"')
+    print("\n--- Tableau Slide 26 ---")
+    print('"Jour","Nb patients","SMA sans apprentissage (Amis)",,,,"SMA avec apprentissage (Amis)",,,,"SMA sans apprentissage (Ennemis)",,,,,,,,"SMA avec apprentissage (Ennemis)"')
+    print(',,"AG_Tabou","AG_RS","Tabou_RS","AG_Tabou_RS","AG_Tabou","AG_RS","Tabou_RS","AG_Tabou","AG_RS","Tabou_RS","AG_Tabou_RS", "AG_Tabou","AG_RS","Tabou_RS","AG_Tabou_RS"')
     
-    # Paires d'agents
-    pairs_config = [
+    pairs = [
         ([{'id':'1','type':'AG','learning':False},{'id':'2','type':'Tabu','learning':False}], 'FRIENDS'),
         ([{'id':'1','type':'AG','learning':False},{'id':'3','type':'RS','learning':False}], 'FRIENDS'),
         ([{'id':'2','type':'Tabu','learning':False},{'id':'3','type':'RS','learning':False}], 'FRIENDS'),
-        
+        ([{'id':'1','type':'AG','learning':False},{'id':'2','type':'Tabu','learning':False},{'id':'3','type':'RS','learning':False}], 'FRIENDS'),
+        ([{'id':'1','type':'AG','learning':True},{'id':'2','type':'Tabu','learning':True}], 'FRIENDS'),
+        ([{'id':'1','type':'AG','learning':True},{'id':'3','type':'RS','learning':True}], 'FRIENDS'),
+        ([{'id':'2','type':'Tabu','learning':True},{'id':'3','type':'RS','learning':True}], 'FRIENDS'),
+        ([{'id':'1','type':'AG','learning':True},{'id':'2','type':'Tabu','learning':True},{'id':'3','type':'RS','learning':True}], 'FRIENDS'),
+        ([{'id':'1','type':'AG','learning':False},{'id':'2','type':'Tabu','learning':False}], 'ENEMIES'),
+        ([{'id':'1','type':'AG','learning':False},{'id':'3','type':'RS','learning':False}], 'ENEMIES'),
+        ([{'id':'2','type':'Tabu','learning':False},{'id':'3','type':'RS','learning':False}], 'ENEMIES'),
+        ([{'id':'1','type':'AG','learning':False},{'id':'2','type':'Tabu','learning':False},{'id':'3','type':'RS','learning':False}], 'ENEMIES'),
         ([{'id':'1','type':'AG','learning':True},{'id':'2','type':'Tabu','learning':True}], 'ENEMIES'),
         ([{'id':'1','type':'AG','learning':True},{'id':'3','type':'RS','learning':True}], 'ENEMIES'),
         ([{'id':'2','type':'Tabu','learning':True},{'id':'3','type':'RS','learning':True}], 'ENEMIES'),
+        ([{'id':'1','type':'AG','learning':True},{'id':'2','type':'Tabu','learning':True},{'id':'3','type':'RS','learning':True}], 'ENEMIES')
     ]
+
     
-    results = []
-    for conf, mode in pairs_config:
-        res = MultiAgentSystem(env, conf, mode=mode).run(iterations)
-        results.append(res)
+    res = []
+    for conf, mode in pairs:
+        res.append(MultiAgentSystem(env, conf, mode=mode).run(iterations))
+        
+    print(f'"J1","{num_patients}","{res[0]}","{res[1]}","{res[2]}",,"{res[3]}","{res[4]}","{res[5]}","{res[6]}","{res[7]}","{res[8]}","{res[9]}","{res[10]}","{res[11]}","{res[12]}","{res[13]}","{res[14]}","{res[15]}"')
         
     print(f'"J1","{num_patients}",,"{results[0]}","{results[1]}","{results[2]}",,"{results[3]}","{results[4]}","{results[5]}"')
 
