@@ -1,164 +1,166 @@
 # Multi-Agent System with Q-Learning for Patient Scheduling
 
-Ce projet implémente un système multi-agents collaboratif pour l'optimisation de l'ordonnancement de patients en milieu hospitalier. Il intègre l'apprentissage par renforcement (Q-Learning) pour l'auto-adaptation des agents.
+This project implements a collaborative multi-agent system for optimizing patient scheduling in healthcare environments. It integrates reinforcement learning (Q-Learning) for agent self-adaptation.
 
-## 🎯 Objectif
+> 📦 **This project is part of the [Red Thread Project](https://github.com/edlansiaux/red-thread-project)** - A comprehensive research initiative on optimization algorithms and multi-agent systems.
 
-**Minimiser le makespan** : Réduire le temps total nécessaire pour traiter tous les patients en optimisant l'allocation des ressources (compétences/personnel médical) et le séquencement des opérations.
+## 🎯 Objective
 
-## 📋 Fonctionnalités Principales
+**Minimize makespan**: Reduce the total time required to process all patients by optimizing resource allocation (medical skills/staff) and operation sequencing.
 
-### Génération de Données Paramétrable
+## 📋 Main Features
 
-Le projet propose plusieurs méthodes de génération de données pour tester différents scénarios :
+### Configurable Data Generation
 
-- **Données de référence** : Basées sur l'image fournie (10 patients, 6 skills)
-- **Générateur paramétrique** : Personnalisation complète (nombre de patients, skills, opérations, durées, etc.)
-- **Générateur équilibré** : Équilibre automatique de la charge entre ressources
-- **Générateur réaliste** : Parcours de soins réalistes (consultation → examens → traitement)
+The project offers several data generation methods to test different scenarios:
 
-### Métaheuristiques Hybrides
+- **Reference data**: Based on the provided image (10 patients, 6 skills)
+- **Parametric generator**: Full customization (number of patients, skills, operations, durations, etc.)
+- **Balanced generator**: Automatic load balancing between resources
+- **Realistic generator**: Realistic care pathways (consultation → examinations → treatment)
 
-- **Algorithme Génétique (AG)** : Avec opérateurs de croisement ordonnés et mutation adaptative
-- **Recherche Tabu** : Avec liste tabu et critère d'aspiration
-- **Recuit Simulé (SA)** : Avec refroidissement exponentiel
+### Hybrid Metaheuristics
 
-### Modes de Collaboration
+- **Genetic Algorithm (GA)**: With ordered crossover operators and adaptive mutation
+- **Tabu Search**: With tabu list and aspiration criterion
+- **Simulated Annealing (SA)**: With exponential cooling
 
-- **Mode Amis (FRIENDS)** : Les agents partagent des solutions complètes via la Mémoire Partagée (SMP)
-- **Mode Ennemis (ENEMIES)** : Les agents ne partagent que les valeurs de fitness (compétition)
+### Collaboration Modes
 
-### Auto-Adaptation via Q-Learning
+- **Friends Mode (FRIENDS)**: Agents share complete solutions via Shared Memory Pool (SMP)
+- **Enemies Mode (ENEMIES)**: Agents only share fitness values (competition)
 
-- Processus de Décision Markovien (MDP)
-- Q-Table pour la sélection des voisinages
-- Équilibre exploration/exploitation (ε-greedy)
+### Self-Adaptation via Q-Learning
 
-### Mémoire Partagée (SMP)
+- Markov Decision Process (MDP)
+- Q-Table for neighborhood selection
+- Exploration/exploitation balance (ε-greedy)
 
-- Contrôle de diversité basé sur la distance entre solutions
-- Insertion conditionnelle selon un seuil de diversité
-- Remplacement de la pire solution si nécessaire
+### Shared Memory Pool (SMP)
 
-### 5 Fonctions de Voisinage
+- Diversity control based on distance between solutions
+- Conditional insertion according to diversity threshold
+- Worst solution replacement when necessary
 
-- **A** : Réassignation à un autre personnel médical
-- **B** : Réassignation de tâches successives
-- **C** : Insertion dans le même planning (déplacement temporel)
-- **D** : Échange entre différents personnels
-- **E** : Échange au sein du même personnel
+### 5 Neighborhood Functions
 
-## 🏗️ Architecture du Projet
+- **A**: Reassignment to another medical staff
+- **B**: Successive task reassignment
+- **C**: Insertion within the same schedule (temporal shift)
+- **D**: Exchange between different staff members
+- **E**: Exchange within the same staff member
+
+## 🏗️ Project Architecture
 
 ```
 sma_qlearning_scheduling/
 ├── core/
-│   ├── __init__.py              # Exports du package
-│   ├── environment.py           # Environnement d'ordonnancement
-│   ├── data_generator.py        # 🆕 Générateurs de données paramétrables
-│   ├── neighborhoods.py         # 5 fonctions de voisinage
-│   ├── qlearning.py             # Q-Learning et MDP
-│   ├── shared_memory.py         # SMP avec contrôle de diversité
-│   └── agents.py                # Agents et système multi-agents
-├── visualization.py             # Visualisations (Gantt, convergence, etc.)
-├── main.py                      # 🆕 Script principal avec options CLI
-├── notebook_demo.ipynb          # Notebook Jupyter interactif
-└── README.md                    # Ce fichier
+│   ├── __init__.py              # Package exports
+│   ├── environment.py           # Scheduling environment
+│   ├── data_generator.py        # 🆕 Configurable data generators
+│   ├── neighborhoods.py         # 5 neighborhood functions
+│   ├── qlearning.py             # Q-Learning and MDP
+│   ├── shared_memory.py         # SMP with diversity control
+│   └── agents.py                # Agents and multi-agent system
+├── visualization.py             # Visualizations (Gantt, convergence, etc.)
+├── main.py                      # 🆕 Main script with CLI options
+├── notebook_demo.ipynb          # Interactive Jupyter notebook
+└── README.md                    # This file
 ```
 
-## 🚀 Installation et Utilisation
+## 🚀 Installation and Usage
 
-### Prérequis
+### Prerequisites
 
 ```bash
 pip install numpy matplotlib
 ```
 
-### Utilisation Rapide
+### Quick Start
 
-#### 1. Utiliser les données de référence (image)
+#### 1. Use reference data (image)
 
 ```bash
 python main.py --use-reference
 ```
 
-#### 2. Générer des données personnalisées
+#### 2. Generate custom data
 
 ```bash
-# 15 patients avec 8 skills
+# 15 patients with 8 skills
 python main.py --patients 15 --skills 8
 
-# 20 patients avec 6 skills, générateur équilibré
+# 20 patients with 6 skills, balanced generator
 python main.py --patients 20 --skills 6 --generator balanced
 
-# 12 patients avec 5 skills, contexte médical réaliste
+# 12 patients with 5 skills, realistic medical context
 python main.py --patients 12 --skills 5 --generator realistic
 ```
 
-#### 3. Exécuter un benchmark comparatif
+#### 3. Run a comparative benchmark
 
 ```bash
 python main.py --patients 20 --skills 6 --mode benchmark
 ```
 
-#### 4. Mode complet (optimisation + benchmark)
+#### 4. Full mode (optimization + benchmark)
 
 ```bash
 python main.py --patients 15 --skills 7 --mode both --iterations 100
 ```
 
-### Options de Ligne de Commande Complètes
+### Complete Command Line Options
 
-#### Génération de données
+#### Data Generation
 
-| Option | Description | Défaut |
-|--------|-------------|--------|
-| `--use-reference` | Utiliser les données de l'image (10 patients, 6 skills) | False |
-| `--patients N` | Nombre de patients | 10 |
-| `--skills N` | Nombre de compétences/ressources | 6 |
-| `--max-operations N` | Nombre max d'opérations par patient | 5 |
-| `--generator TYPE` | Type de générateur (`parametric`, `balanced`, `realistic`) | `parametric` |
-| `--seed N` | Seed pour reproductibilité | None |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--use-reference` | Use image data (10 patients, 6 skills) | False |
+| `--patients N` | Number of patients | 10 |
+| `--skills N` | Number of skills/resources | 6 |
+| `--max-operations N` | Maximum operations per patient | 5 |
+| `--generator TYPE` | Generator type (`parametric`, `balanced`, `realistic`) | `parametric` |
+| `--seed N` | Seed for reproducibility | None |
 
-#### Optimisation
+#### Optimization
 
-| Option | Description | Défaut |
-|--------|-------------|--------|
-| `--iterations N` | Nombre d'itérations | 50 |
-| `--collaboration MODE` | Mode de collaboration (`FRIENDS`, `ENEMIES`) | `FRIENDS` |
-| `--no-learning` | Désactiver le Q-Learning | False |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--iterations N` | Number of iterations | 50 |
+| `--collaboration MODE` | Collaboration mode (`FRIENDS`, `ENEMIES`) | `FRIENDS` |
+| `--no-learning` | Disable Q-Learning | False |
 
-#### Exécution
+#### Execution
 
-| Option | Description | Défaut |
-|--------|-------------|--------|
-| `--mode MODE` | Mode d'exécution (`optimize`, `benchmark`, `both`) | `optimize` |
-| `--quiet` | Mode silencieux | False |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--mode MODE` | Execution mode (`optimize`, `benchmark`, `both`) | `optimize` |
+| `--quiet` | Silent mode | False |
 
-### Exemples d'Utilisation
+### Usage Examples
 
 ```bash
-# Exemple 1 : Test rapide avec données de référence
+# Example 1: Quick test with reference data
 python main.py --use-reference --iterations 30
 
-# Exemple 2 : Scénario hospitalier réaliste avec 25 patients
+# Example 2: Realistic hospital scenario with 25 patients
 python main.py --patients 25 --skills 8 --generator realistic --iterations 100
 
-# Exemple 3 : Benchmark complet avec données équilibrées
+# Example 3: Complete benchmark with balanced data
 python main.py --patients 20 --skills 6 --generator balanced --mode benchmark
 
-# Exemple 4 : Test de scalabilité
+# Example 4: Scalability test
 python main.py --patients 50 --skills 10 --iterations 150 --quiet
 
-# Exemple 5 : Comparaison des modes de collaboration
+# Example 5: Collaboration mode comparison
 python main.py --patients 15 --skills 7 --collaboration FRIENDS --mode benchmark
 python main.py --patients 15 --skills 7 --collaboration ENEMIES --mode benchmark
 
-# Exemple 6 : Reproductibilité avec seed
+# Example 6: Reproducibility with seed
 python main.py --patients 20 --skills 6 --seed 42 --mode both
 ```
 
-### Utilisation Programmatique
+### Programmatic Usage
 
 ```python
 from core import (
@@ -170,10 +172,10 @@ from core import (
     MultiAgentSystem
 )
 
-# Méthode 1 : Utiliser les données de référence
+# Method 1: Use reference data
 data, skills, num_patients = get_reference_data()
 
-# Méthode 2 : Générer des données personnalisées
+# Method 2: Generate custom data
 data, skills = generate_parametric_data(
     num_patients=15,
     num_skills=8,
@@ -181,11 +183,11 @@ data, skills = generate_parametric_data(
     operation_probability=0.75,
     min_duration=15,
     max_duration=60,
-    seed=42  # Pour reproductibilité
+    seed=42  # For reproducibility
 )
 num_patients = 15
 
-# Méthode 3 : Données équilibrées
+# Method 3: Balanced data
 data, skills = generate_balanced_data(
     num_patients=20,
     num_skills=6,
@@ -193,72 +195,72 @@ data, skills = generate_balanced_data(
     seed=42
 )
 
-# Afficher le résumé des données
+# Display data summary
 print_data_summary(data, skills)
 
-# Créer l'environnement
+# Create the environment
 env = SchedulingEnvironment(data, skills, num_patients)
 
-# Créer le système multi-agents
+# Create the multi-agent system
 mas = MultiAgentSystem(
     env, 
     agents_config=[
-        {'id': 'AG_1', 'type': 'AG', 'learning': True},
+        {'id': 'GA_1', 'type': 'GA', 'learning': True},
         {'id': 'Tabu_1', 'type': 'Tabu', 'learning': True},
-        {'id': 'SA_1', 'type': 'RS', 'learning': True}
+        {'id': 'SA_1', 'type': 'SA', 'learning': True}
     ],
-    mode='FRIENDS'  # ou 'ENEMIES'
+    mode='FRIENDS'  # or 'ENEMIES'
 )
 
-# Exécuter l'optimisation
+# Run the optimization
 best_makespan = mas.run(iterations=100)
-print(f"Meilleur makespan: {best_makespan} slots ({best_makespan * 5} minutes)")
+print(f"Best makespan: {best_makespan} slots ({best_makespan * 5} minutes)")
 ```
 
-### Utiliser le Notebook
+### Using the Notebook
 
 ```bash
 jupyter notebook notebook_demo.ipynb
 ```
 
-## 📊 Paramètres Principaux
+## 📊 Main Parameters
 
 ### Q-Learning
 
-| Paramètre | Description | Valeur par Défaut |
-|-----------|-------------|-------------------|
-| α (alpha) | Taux d'apprentissage | 0.1 |
-| γ (gamma) | Facteur d'actualisation | 0.9 |
-| ε (epsilon) | Taux d'exploration initial | 0.1 |
+| Parameter | Description | Default Value |
+|-----------|-------------|---------------|
+| α (alpha) | Learning rate | 0.1 |
+| γ (gamma) | Discount factor | 0.9 |
+| ε (epsilon) | Initial exploration rate | 0.1 |
 
-### SMP (Mémoire Partagée)
+### SMP (Shared Memory Pool)
 
-| Paramètre | Description | Valeur par Défaut |
-|-----------|-------------|-------------------|
-| max_size | Taille maximale | 20 |
-| R (min_distance) | Distance minimale entre solutions | 2 |
-| DT (diversity_threshold) | Seuil de diversité | 0.5 |
+| Parameter | Description | Default Value |
+|-----------|-------------|---------------|
+| max_size | Maximum size | 20 |
+| R (min_distance) | Minimum distance between solutions | 2 |
+| DT (diversity_threshold) | Diversity threshold | 0.5 |
 
-### Générateurs de Données
+### Data Generators
 
-#### Générateur Paramétrique
+#### Parametric Generator
 
 ```python
 generate_parametric_data(
-    num_patients=10,           # Nombre de patients
-    num_skills=6,              # Nombre de compétences
-    max_operations=5,          # Opérations max par patient
-    operation_probability=0.7, # Probabilité qu'une opération existe
-    min_duration=10,           # Durée min (minutes)
-    max_duration=60,           # Durée max (minutes)
-    max_tasks_per_operation=3, # Tâches max par opération
-    seed=None                  # Seed pour reproductibilité
+    num_patients=10,           # Number of patients
+    num_skills=6,              # Number of skills
+    max_operations=5,          # Max operations per patient
+    operation_probability=0.7, # Probability that an operation exists
+    min_duration=10,           # Min duration (minutes)
+    max_duration=60,           # Max duration (minutes)
+    max_tasks_per_operation=3, # Max tasks per operation
+    seed=None                  # Seed for reproducibility
 )
 ```
 
-#### Générateur Équilibré
+#### Balanced Generator
 
-Génère des données où chaque skill est utilisée de manière équilibrée pour tester l'équilibrage de charge.
+Generates data where each skill is used in a balanced manner to test load balancing.
 
 ```python
 generate_balanced_data(
@@ -269,9 +271,9 @@ generate_balanced_data(
 )
 ```
 
-#### Générateur Réaliste
+#### Realistic Generator
 
-Génère des parcours de soins réalistes avec des séquences logiques (consultation → examens → traitement).
+Generates realistic care pathways with logical sequences (consultation → examinations → treatment).
 
 ```python
 generate_realistic_healthcare_data(
@@ -281,42 +283,47 @@ generate_realistic_healthcare_data(
 )
 ```
 
-## 📈 Visualisations Disponibles
+## 📈 Available Visualizations
 
-- **Diagramme de Gantt** : Planning des tâches par compétence
-- **Courbe de Convergence** : Évolution du makespan
-- **Q-Table** : Valeurs apprises par Q-Learning
-- **Matrice de Diversité** : Distances entre solutions dans la SMP
-- **Contributions des Agents** : Améliorations par agent
+- **Gantt Chart**: Task scheduling by skill
+- **Convergence Curve**: Makespan evolution
+- **Q-Table**: Values learned by Q-Learning
+- **Diversity Matrix**: Distances between solutions in the SMP
+- **Agent Contributions**: Improvements by agent
 
-## 🎓 Données de Référence (Image)
+## 🎓 Reference Data (Image)
 
-Les données de référence correspondent à l'exemple de la table de compétences fournie :
+The reference data corresponds to the provided skill table example:
 
-- **10 patients** (Patient 1 à Patient 10)
-- **6 compétences** (Skill 1 à Skill 6)
-- **5 opérations maximum** par patient
-- Répartition variable des tâches selon le patient
+- **10 patients** (Patient 1 to Patient 10)
+- **6 skills** (Skill 1 to Skill 6)
+- **5 operations maximum** per patient
+- Variable task distribution depending on the patient
 
-Ces données peuvent être utilisées comme benchmark de référence avec `--use-reference`.
+This data can be used as a reference benchmark with `--use-reference`.
 
-## 🔬 Basé Sur
+## 🔬 Based On
 
-Ce projet est basé sur la présentation :
-> "Optimisation Collaborative: Agents Auto-Adaptatifs, Apprentissage par Renforcement"
+This project is based on the presentation:
+> "Collaborative Optimization: Self-Adaptive Agents, Reinforcement Learning"
 
-### Références Conceptuelles
+### Conceptual References
 
-- Processus de Décision Markovien (Bellman)
+- Markov Decision Process (Bellman)
 - Q-Learning (Watkins & Dayan, 1992)
-- Systèmes Multi-Agents pour l'optimisation (Jin & Liu 2002, Milano & Roli 2004)
-- Métaheuristiques hybrides (Fernandes et al. 2009)
+- Multi-Agent Systems for optimization (Jin & Liu 2002, Milano & Roli 2004)
+- Hybrid metaheuristics (Fernandes et al. 2009)
 
-## 📄 Licence
+## 📄 License
 
-Ce projet est publié sous licence MIT. Voir le fichier LICENSE pour plus de détails.
+This project is released under the MIT License. See the LICENSE file for more details.
 
-## 👥 Auteurs & Remerciements
+## 🔗 Related Projects
+
+This repository is derived from the main project:
+- **[Red Thread Project](https://github.com/edlansiaux/red-thread-project)** - The original repository containing the complete research work and additional resources.
+
+## 👥 Authors & Acknowledgments
 
 - [Mohammed Berrajaa](https://github.com/medberrajaa)
 - [Guillaume Gauguet](https://github.com/GAUGUET)
@@ -325,42 +332,42 @@ Ce projet est publié sous licence MIT. Voir le fichier LICENSE pour plus de dé
 - [Edouard Lansiaux](https://github.com/edlansiaux)
 - [Aurélien Loison](https://github.com/lsnaurelien)
 
-Merci à tous les contributeurs qui aident à améliorer ce projet !
+Thanks to all contributors who help improve this project!
 
-## 🚦 Tests de Scalabilité
+## 🚦 Scalability Tests
 
-Le projet permet de tester facilement la scalabilité de l'approche :
+The project allows easy testing of the approach's scalability:
 
 ```bash
-# Test avec 10 patients (petit problème)
+# Test with 10 patients (small problem)
 python main.py --patients 10 --skills 5 --mode benchmark
 
-# Test avec 30 patients (problème moyen)
+# Test with 30 patients (medium problem)
 python main.py --patients 30 --skills 8 --mode benchmark
 
-# Test avec 50 patients (grand problème)
+# Test with 50 patients (large problem)
 python main.py --patients 50 --skills 10 --mode benchmark --iterations 200
 ```
 
-## 💡 Conseils d'Utilisation
+## 💡 Usage Tips
 
-1. **Pour débuter** : Utilisez `--use-reference` pour tester rapidement avec les données de l'image
-2. **Pour comparer** : Utilisez `--mode benchmark` pour comparer les différentes approches
-3. **Pour la production** : Utilisez `--generator realistic` pour des scénarios réalistes
-4. **Pour la recherche** : Utilisez `--seed` pour garantir la reproductibilité des expériences
-5. **Pour la scalabilité** : Augmentez progressivement `--patients` et `--skills` pour tester les limites
+1. **To get started**: Use `--use-reference` to quickly test with the image data
+2. **To compare**: Use `--mode benchmark` to compare different approaches
+3. **For production**: Use `--generator realistic` for realistic scenarios
+4. **For research**: Use `--seed` to ensure experiment reproducibility
+5. **For scalability**: Gradually increase `--patients` and `--skills` to test limits
 
-## 🐛 Dépannage
+## 🐛 Troubleshooting
 
-- **Problème** : Le makespan ne diminue pas
-  - **Solution** : Augmentez le nombre d'itérations avec `--iterations`
+- **Problem**: Makespan doesn't decrease
+  - **Solution**: Increase the number of iterations with `--iterations`
   
-- **Problème** : Résultats trop lents
-  - **Solution** : Utilisez `--quiet` pour désactiver l'affichage verbose
+- **Problem**: Results too slow
+  - **Solution**: Use `--quiet` to disable verbose output
   
-- **Problème** : Besoin de reproduire des résultats
-  - **Solution** : Utilisez `--seed` avec une valeur fixe
+- **Problem**: Need to reproduce results
+  - **Solution**: Use `--seed` with a fixed value
 
 ## 📞 Support
 
-Pour toute question ou problème, veuillez ouvrir une issue sur GitHub ou contacter les auteurs.
+For any questions or issues, please open an issue on GitHub or contact the authors.
