@@ -1,113 +1,415 @@
 """
-core/agents.py - Système Multi-Agents, Collaboration et Agents Métaheuristiques.
+core/agents.py - Agents métaheuristiques complets et remasterisés.
 """
-from core.environment import SchedulingEnvironment, Solution
-from core.neighborhoods import NeighborhoodManager
-from core.shared_memory import SharedMemory
-from core.qlearning import QLearningModel
+
+from typing import Dict, List, Tuple, Optional, Any
+from abc import ABC, abstractmethod
 import random
+import math
+import copy
 
-class MetaheuristicAgent:
-    def __init__(self, id, env, strategy_type, use_learning=True):
-        self.id = id
-        self.env = env
-        self.strategy_type = strategy_type # 'AG', 'Tabu', 'RS'
-        self.use_learning = use_learning
-        
-        self.current_solution = None
-        self.best_solution = None
-        
-        self.nm = NeighborhoodManager(env)
-        # MDP pour l'auto-adaptation [cite: 764]
-        self.brain = QLearningModel(actions=self.nm.moves) if use_learning else None
-        self.last_fitness = None
+# Imports centralisés remasterisés
+from core.environment import SchedulingEnvironment, Task
+from core.neighborhoods import NeighborhoodManager
+from core.qlearning import AdaptiveNeighborhoodSelector
+from core.shared_memory import SharedMemoryPool, Solution, ElitePool
 
-    def initialize(self):
-        self.current_solution = self.env.build_initial_solution()
+class BaseAgent(ABC):
+    """Classe de base abstraite pour les agents."""
+    
+    def __init__(self, agent_id: str, environment: SchedulingEnvironment,
+                 use_qlearning: bool = True):
+        self.agent_id = agent_id
+        self.env = environment
+        self.use_qlearning = use_qlearning
+        
+        self.current_solution: Optional[Dict[Tuple[int, int], List[Task]]] = None
+        self.current_fitness: float = float('inf')
+        self.best_solution: Optional[Dict[Tuple[int, int], List[Task]]] = None
+        self.best_fitness: float = float('inf')
+        
+        self.neighborhood_manager = NeighborhoodManager()
+        self.q_selector = AdaptiveNeighborhoodSelector() if use_qlearning else None
+        
+        self.fitness_history: List[float] = []
+        self.iterations_active = 0
+    
+    def initialize(self, random_init: bool = True):
+        self.current_solution = self.env.build_initial_solution(random_order=random_init)
+        self.current_fitness, _, _ = self.env.evaluate(self.current_solution)
         self.best_solution = self.env.copy_solution(self.current_solution)
-        self.last_fitness = self.current_solution.fitness
-
-    def step(self, emp: SharedMemory, collaboration_mode: str):
-        # 1. Collaboration (Modes Amis/Ennemis) [cite: 618]
-        if collaboration_mode == 'FRIENDS':
-            # Mode Amis: Partage complet. On peut récupérer une solution de l'EMP [cite: 620]
-            best_shared = emp.get_best()
-            if best_shared and best_shared.fitness < self.current_solution.fitness:
-                # Probabilité d'accepter l'aide (simulation de l'interaction)
-                if random.random() < 0.2: 
-                    self.current_solution = self.env.copy_solution(best_shared)
-
-        elif collaboration_mode == 'ENEMIES':
-            # Mode Ennemis: Pas d'accès aux solutions, seulement aux valeurs (critères) [cite: 578]
-            best_shared = emp.get_best()
-            # "Un agent ne travaille que si une meilleure solution que la sienne a été trouvée" [cite: 580]
-            if best_shared and best_shared.fitness < self.current_solution.fitness:
-                 # Si un "ennemi" a mieux, l'agent tente une intensification ou perturbation
-                 # On simule cela par une perturbation via le voisinage A
-                 self.current_solution = self.nm.apply_move(self.current_solution, 'A')
-
-        # 2. Choix de l'action (Voisinage) via Q-Learning ou Aléatoire
-        state = 1
-        action = 'C' # Default
+        self.best_fitness = self.current_fitness
         
-        if self.use_learning:
-            # Déterminer l'état courant et choisir l'action via MDP [cite: 1167]
-            state = self.brain.get_state(self.current_solution.fitness, self.last_fitness)
-            action = self.brain.select_action(state)
+        if self.q_selector:
+            self.q_selector.reset(self.current_fitness)
+        
+        self.fitness_history = [self.current_fitness]
+    
+    def set_solution(self, solution: Dict, fitness: float = None):
+        self.current_solution = self.env.copy_solution(solution)
+        if fitness is None:
+            self.current_fitness, _, _ = self.env.evaluate(self.current_solution)
         else:
-            # Sans apprentissage : stratégies fixes par défaut
-            if self.strategy_type == 'AG': action = random.choice(['A', 'B'])
-            elif self.strategy_type == 'Tabu': action = random.choice(['C', 'D'])
-            else: action = random.choice(['C', 'E'])
-
-        # 3. Application du Mouvement (Voisinage)
-        prev_fit = self.current_solution.fitness
-        new_sol = self.nm.apply_move(self.current_solution, action)
+            self.current_fitness = fitness
         
-        # 4. Acceptation (Logique Métaheuristique simplifiée)
+        if self.current_fitness < self.best_fitness:
+            self.best_solution = self.env.copy_solution(self.current_solution)
+            self.best_fitness = self.current_fitness
+    
+    @abstractmethod
+    def optimize_step(self) -> Tuple[Dict, float]:
+        pass
+    
+    def get_solution(self) -> Solution:
+        return Solution(
+            sequences=self.env.copy_solution(self.current_solution),
+            fitness=self.current_fitness,
+            agent_id=self.agent_id
+        )
+
+class GeneticAgent(BaseAgent):
+    """Agent Algorithme Génétique."""
+    
+    def __init__(self, agent_id: str, environment: SchedulingEnvironment,
+                 population_size: int = 15, mutation_rate: float = 0.1,
+                 use_qlearning: bool = True):
+        super().__init__(agent_id, environment, use_qlearning)
+        self.population_size = population_size
+        self.mutation_rate = mutation_rate
+        self.population: List[Tuple[Dict, float]] = []
+    
+    def initialize(self, random_init: bool = True):
+        super().initialize(random_init)
+        self.population = []
+        # Génération de la population initiale
+        for _ in range(self.population_size):
+            sol = self.env.build_initial_solution(random_order=True)
+            fitness, _, _ = self.env.evaluate(sol)
+            self.population.append((sol, fitness))
+        
+        self.population.sort(key=lambda x: x[1])
+        self.current_solution = self.env.copy_solution(self.population[0][0])
+        self.current_fitness = self.population[0][1]
+        
+        if self.current_fitness < self.best_fitness:
+            self.best_solution = self.env.copy_solution(self.current_solution)
+            self.best_fitness = self.current_fitness
+            
+    def _tournament_selection(self, k: int = 3) -> Dict:
+        competitors = random.sample(self.population, min(k, len(self.population)))
+        winner = min(competitors, key=lambda x: x[1])
+        return self.env.copy_solution(winner[0])
+    
+    def _crossover(self, parent1: Dict, parent2: Dict) -> Dict:
+        """Croisement OX (Order Crossover) par file."""
+        child = {}
+        # Pour chaque clé (Skill, Stage) présente
+        all_keys = set(parent1.keys()) | set(parent2.keys())
+        
+        for key in all_keys:
+            seq1 = parent1.get(key, [])
+            seq2 = parent2.get(key, [])
+            
+            # Si une des séquences est vide ou courte, on copie simplement l'une des deux
+            if len(seq1) < 2 or len(seq2) < 2:
+                child[key] = copy.deepcopy(seq1) if seq1 else copy.deepcopy(seq2)
+                continue
+                
+            # Crossover OX
+            n = len(seq1)
+            # Points de coupe
+            a, b = sorted(random.sample(range(n), 2))
+            
+            child_seq = [None] * n
+            # Copie du segment parent 1
+            child_seq[a:b+1] = seq1[a:b+1]
+            
+            # Remplissage avec parent 2 (en préservant l'ordre relatif)
+            current_tasks_ids = set(t.i for t in child_seq if t is not None)
+            
+            # On prend les tâches de seq2 qui ne sont pas déjà dans le segment du child
+            remaining = [t for t in seq2 if t.i not in current_tasks_ids]
+            
+            pos = 0
+            for i in range(n):
+                if child_seq[i] is None:
+                    if pos < len(remaining):
+                        child_seq[i] = remaining[pos]
+                        pos += 1
+                    else:
+                        # Fallback si incohérence
+                        child_seq[i] = seq1[i] 
+                        
+            child[key] = child_seq
+            
+        return child
+    
+    def _mutate(self, solution: Dict) -> Dict:
+        """Mutation avec ou sans Q-Learning."""
+        mutated = self.env.copy_solution(solution)
+        
+        if self.use_qlearning and self.q_selector:
+            # Q-Learning choisit le voisinage (C ou E)
+            neighborhood = self.q_selector.select_neighborhood()
+            neighbor = self.neighborhood_manager.generate_neighbor(
+                mutated, neighborhood, self.env.skills, self.env.max_ops
+            )
+            if neighbor:
+                return neighbor
+            return mutated
+        else:
+            # Mutation classique
+            for key in mutated:
+                if len(mutated[key]) >= 2 and random.random() < self.mutation_rate:
+                    i, j = random.sample(range(len(mutated[key])), 2)
+                    mutated[key][i], mutated[key][j] = mutated[key][j], mutated[key][i]
+            return mutated
+
+    def optimize_step(self) -> Tuple[Dict, float]:
+        self.iterations_active += 1
+        new_population = []
+        
+        # Élitisme
+        n_elite = max(1, self.population_size // 5)
+        new_population.extend(self.population[:n_elite])
+        
+        # Reproduction
+        while len(new_population) < self.population_size:
+            p1 = self._tournament_selection()
+            p2 = self._tournament_selection()
+            child = self._crossover(p1, p2)
+            child = self._mutate(child)
+            fit, _, _ = self.env.evaluate(child)
+            new_population.append((child, fit))
+            
+        new_population.sort(key=lambda x: x[1])
+        self.population = new_population[:self.population_size]
+        
+        best_sol, best_fit = self.population[0]
+        self.current_solution = self.env.copy_solution(best_sol)
+        self.current_fitness = best_fit
+        
+        if self.current_fitness < self.best_fitness:
+            self.best_solution = self.env.copy_solution(self.current_solution)
+            self.best_fitness = self.current_fitness
+            
+        # Feedback Q-Learning
+        if self.q_selector:
+            self.q_selector.update_with_result('E', self.current_fitness)
+            
+        self.fitness_history.append(self.current_fitness)
+        return self.current_solution, self.current_fitness
+
+class TabuAgent(BaseAgent):
+    """Agent Recherche Tabou."""
+    
+    def __init__(self, agent_id: str, environment: SchedulingEnvironment,
+                 tabu_tenure: int = 10, candidate_limit: int = 20,
+                 use_qlearning: bool = True):
+        super().__init__(agent_id, environment, use_qlearning)
+        self.tabu_tenure = tabu_tenure
+        self.candidate_limit = candidate_limit
+        self.tabu_list: List[Tuple] = []
+        
+    def optimize_step(self) -> Tuple[Dict, float]:
+        self.iterations_active += 1
+        
+        candidates = []
+        
+        # Génération des candidats
+        if self.use_qlearning and self.q_selector:
+            for _ in range(self.candidate_limit):
+                n_name = self.q_selector.select_neighborhood()
+                n_sol = self.neighborhood_manager.generate_neighbor(
+                    self.current_solution, n_name, self.env.skills, self.env.max_ops
+                )
+                if n_sol:
+                    move_hash = hash(str(n_sol))
+                    candidates.append((n_sol, n_name, move_hash))
+        else:
+            active_neighbors = ['C', 'E']
+            for _ in range(self.candidate_limit):
+                n_name = random.choice(active_neighbors)
+                n_sol = self.neighborhood_manager.generate_neighbor(
+                    self.current_solution, n_name, self.env.skills, self.env.max_ops
+                )
+                if n_sol:
+                    move_hash = hash(str(n_sol))
+                    candidates.append((n_sol, n_name, move_hash))
+        
+        if not candidates:
+            return self.current_solution, self.current_fitness
+            
+        # Sélection du meilleur candidat non tabou
+        best_neighbor = None
+        best_neighbor_fit = float('inf')
+        best_neighbor_name = None
+        best_move_hash = None
+        
+        for sol, name, move_hash in candidates:
+            fit, _, _ = self.env.evaluate(sol)
+            
+            is_tabu = move_hash in self.tabu_list
+            is_aspiration = fit < self.best_fitness
+            
+            if (not is_tabu or is_aspiration) and fit < best_neighbor_fit:
+                best_neighbor = sol
+                best_neighbor_fit = fit
+                best_neighbor_name = name
+                best_move_hash = move_hash
+        
+        # Mise à jour
+        if best_neighbor:
+            self.current_solution = best_neighbor
+            self.current_fitness = best_neighbor_fit
+            
+            if self.current_fitness < self.best_fitness:
+                self.best_solution = self.env.copy_solution(self.current_solution)
+                self.best_fitness = self.current_fitness
+            
+            # Gestion Tabou
+            self.tabu_list.append(best_move_hash)
+            if len(self.tabu_list) > self.tabu_tenure:
+                self.tabu_list.pop(0)
+                
+            # Feedback Q-Learning
+            if self.q_selector and best_neighbor_name:
+                self.q_selector.update_with_result(best_neighbor_name, self.current_fitness)
+                
+        self.fitness_history.append(self.current_fitness)
+        return self.current_solution, self.current_fitness
+
+class SimulatedAnnealingAgent(BaseAgent):
+    """Agent Recuit Simulé."""
+    
+    def __init__(self, agent_id: str, environment: SchedulingEnvironment,
+                 initial_temp: float = 100.0, cooling_rate: float = 0.99,
+                 min_temp: float = 0.1, use_qlearning: bool = True):
+        super().__init__(agent_id, environment, use_qlearning)
+        self.temperature = initial_temp
+        self.cooling_rate = cooling_rate
+        self.min_temp = min_temp
+        
+    def optimize_step(self) -> Tuple[Dict, float]:
+        self.iterations_active += 1
+        
+        # Choix du voisinage
+        if self.use_qlearning and self.q_selector:
+            n_name = self.q_selector.select_neighborhood()
+        else:
+            n_name = random.choice(['C', 'E'])
+            
+        # Génération voisin
+        neighbor = self.neighborhood_manager.generate_neighbor(
+            self.current_solution, n_name, self.env.skills, self.env.max_ops
+        )
+        
+        if not neighbor:
+            return self.current_solution, self.current_fitness
+            
+        new_fit, _, _ = self.env.evaluate(neighbor)
+        delta = new_fit - self.current_fitness
+        
         accept = False
-        if new_sol.fitness <= prev_fit:
+        if delta < 0:
             accept = True
-        else:
-            # Recuit Simulé (RS): acceptation probabiliste
-            if self.strategy_type == 'RS' and random.random() < 0.1:
+        elif self.temperature > self.min_temp:
+            try:
+                prob = math.exp(-delta / self.temperature)
+            except OverflowError:
+                prob = 0
+            if random.random() < prob:
                 accept = True
         
         if accept:
-            self.current_solution = new_sol
-            if new_sol.fitness < self.best_solution.fitness:
-                self.best_solution = self.env.copy_solution(new_sol)
-                # Partage vers EMP si amélioration [cite: 623]
-                emp.try_insert(self.env.copy_solution(self.best_solution))
-
-        # 5. Récompense Q-Learning (Mise à jour MDP) [cite: 1176]
-        if self.use_learning:
-            # Reward positif si amélioration du temps d'attente/makespan
-            reward = prev_fit - new_sol.fitness 
-            next_state = self.brain.get_state(new_sol.fitness, prev_fit)
-            self.brain.update(state, action, reward, next_state)
+            self.current_solution = neighbor
+            self.current_fitness = new_fit
+            if self.current_fitness < self.best_fitness:
+                self.best_solution = self.env.copy_solution(self.current_solution)
+                self.best_fitness = self.current_fitness
+        
+        # Refroidissement
+        self.temperature = max(self.min_temp, self.temperature * self.cooling_rate)
+        
+        # Feedback Q-Learning
+        if self.q_selector:
+            self.q_selector.update_with_result(n_name, self.current_fitness)
             
-        self.last_fitness = self.current_solution.fitness
-        return self.best_solution.fitness
+        self.fitness_history.append(self.current_fitness)
+        return self.current_solution, self.current_fitness
+
+class CollaborationMode:
+    FRIENDS = "friends"
+    ENEMIES = "enemies"
 
 class MultiAgentSystem:
-    def __init__(self, env, agents_config, mode='FRIENDS'):
-        self.env = env
-        self.emp = SharedMemory()
+    """Système Multi-Agents gérant la coopération."""
+    
+    def __init__(self, environment: SchedulingEnvironment,
+                 mode: str = CollaborationMode.FRIENDS,
+                 use_qlearning: bool = True):
+        self.env = environment
         self.mode = mode
-        self.agents = []
-        for conf in agents_config:
-            self.agents.append(MetaheuristicAgent(conf['id'], env, conf['type'], conf['learning']))
+        self.use_qlearning = use_qlearning
+        self.agents: Dict[str, BaseAgent] = {}
+        
+        # Pool de mémoire partagée
+        if mode == CollaborationMode.FRIENDS:
+            self.shared_memory = SharedMemoryPool(max_size=25, min_distance=2)
+        else:
+            self.shared_memory = ElitePool(max_size=5)
+            
+        self.global_best_solution: Optional[Solution] = None
+        self.global_best_fitness: float = float('inf')
+        self.iteration = 0
 
-    def run(self, iterations=50):
-        for a in self.agents: a.initialize()
+    def add_agent(self, agent_type: str, agent_id: str, **kwargs):
+        if agent_type == 'genetic':
+            agent = GeneticAgent(agent_id, self.env, use_qlearning=self.use_qlearning, **kwargs)
+        elif agent_type == 'tabu':
+            agent = TabuAgent(agent_id, self.env, use_qlearning=self.use_qlearning, **kwargs)
+        elif agent_type == 'sa':
+            agent = SimulatedAnnealingAgent(agent_id, self.env, use_qlearning=self.use_qlearning, **kwargs)
+        else:
+            raise ValueError(f"Type d'agent inconnu: {agent_type}")
         
-        history = []
-        for i in range(iterations):
-            step_res = []
-            for a in self.agents:
-                fit = a.step(self.emp, self.mode)
-                step_res.append(fit)
-            history.append(min(step_res))
+        self.agents[agent_id] = agent
+        return agent
+
+    def run(self, n_iterations: int, verbose: bool = True) -> Optional[Solution]:
+        for agent in self.agents.values():
+            agent.initialize()
+            sol = agent.get_solution()
+            self.shared_memory.insert(sol)
+            if sol.fitness < self.global_best_fitness:
+                self.global_best_fitness = sol.fitness
+                self.global_best_solution = sol
+
+        for i in range(n_iterations):
+            self.iteration += 1
+            
+            for agent_id, agent in self.agents.items():
+                if self.mode == CollaborationMode.FRIENDS:
+                    if random.random() < 0.1 and self.shared_memory.solutions:
+                        diverse_sol = self.shared_memory.solutions[random.randint(0, len(self.shared_memory.solutions)-1)]
+                        agent.set_solution(diverse_sol.sequences, diverse_sol.fitness)
+                
+                new_sol, new_fit = agent.optimize_step()
+                
+                if new_fit < self.global_best_fitness:
+                    self.global_best_fitness = new_fit
+                    self.global_best_solution = agent.get_solution()
+                    if verbose:
+                        print(f"  > New Best Global: {new_fit} by {agent_id}")
+
+                sol_obj = agent.get_solution()
+                self.shared_memory.insert(sol_obj, self.iteration)
         
-        return min(history)
+        return self.global_best_solution
+
+    def get_statistics(self):
+        return {
+            'global_best_fitness': self.global_best_fitness,
+            'emp_stats': self.shared_memory.get_statistics(),
+            'agents': list(self.agents.keys())
+        }
