@@ -1,112 +1,210 @@
 """
-benchmark_tables.py - Script pour générer les données des tableaux et les VISUALISATIONS.
+core/benchmark_tables.py - Génération des Tableaux 1 et 2 conformes au diaporama.
+
+Tableau 1 (sans collaboration) :
+  Colonnes : AG | Tabou | RS | Agent_AG | Agent_Tabou | Agent_RS
+  Lignes   : Jour 1..4 avec nombre de patients variable
+
+Tableau 2 (avec collaboration) :
+  Sous-tableaux : Sans Apprentissage / Avec Apprentissage
+  Pour chaque : Amis (AG_Tabou, AG_RS, Tabou_RS, AG_Tabou_RS)
+              | Ennemis (AG_Tabou, AG_RS, Tabou_RS, AG_Tabou_RS)
 """
+
 import sys
 import os
 import time
-import shutil
 
-# Assurer que le dossier courant est dans le path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.environment import create_default_environment
+from core.environment import SchedulingEnvironment, generate_random_data, DEFAULT_SKILLS, DEFAULT_MAX_OPS
 from core.agents import MultiAgentSystem, CollaborationMode
 from visualization import plot_gantt, plot_convergence
 
-# Dossier de sortie pour les images
 OUTPUT_DIR = "benchmark_results"
+ITERATIONS = 50
+
+# Jours de benchmark (reproduire les lignes du diapo)
+DAYS = [
+    {"day": 1, "num_patients": 10,  "seed": 100},
+    {"day": 2, "num_patients": 68,  "seed": 200},
+    {"day": 3, "num_patients": 78,  "seed": 300},
+    {"day": 4, "num_patients": 34,  "seed": 400},
+]
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _make_env(num_patients: int, seed: int) -> SchedulingEnvironment:
+    data = generate_random_data(
+        num_patients=num_patients,
+        max_ops=DEFAULT_MAX_OPS,
+        skills=DEFAULT_SKILLS,
+        task_probability=0.90,
+        seed=seed,
+    )
+    return SchedulingEnvironment(data, DEFAULT_SKILLS, num_patients, DEFAULT_MAX_OPS)
+
+
+def _run(env, agents_config, mode, use_ql, iters=ITERATIONS):
+    """Lance un système, renvoie le meilleur makespan."""
+    mas = MultiAgentSystem(env, mode=mode, use_qlearning=use_ql)
+    for atype, aid, params in agents_config:
+        mas.add_agent(atype, aid, **params)
+    best = mas.run(n_iterations=iters, verbose=False)
+    return best.fitness if best else float("inf"), mas
+
+# ── Configurations d'agents ──────────────────────────────────────────────────
+
+AG  = ("genetic", "AG",   {"population_size": 15})
+TAB = ("tabu",    "Tabu", {"tabu_tenure": 10})
+RS  = ("sa",      "RS",   {"initial_temp": 100})
+
 
 def setup_output_dir():
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
-        print(f"Dossier '{OUTPUT_DIR}' créé.")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def run_benchmark_scenario(scenario_name, system, iterations=50, save_plots=True):
-    """Exécute un scénario, retourne le makespan et sauvegarde les graphiques."""
-    print(f"  > Exécution {scenario_name}...")
-    
-    start_time = time.time()
-    best_solution = system.run(n_iterations=iterations, verbose=False)
-    duration = time.time() - start_time
-    
-    stats = system.get_statistics()
-    best_fitness = stats['global_best_fitness']
-    
-    print(f"    Terminé en {duration:.2f}s. Makespan: {best_fitness}")
-    
-    # --- GÉNÉRATION DES VISUALISATIONS ---
-    if save_plots:
-        safe_name = scenario_name.replace(" ", "_").replace("(", "").replace(")", "").replace("+", "Plus")
-        
-        # 1. Courbes de convergence
-        histories = {aid: agent.fitness_history for aid, agent in system.agents.items()}
-        plot_convergence(
-            histories, 
-            title=f"Convergence - {scenario_name}",
-            save_path=os.path.join(OUTPUT_DIR, f"{safe_name}_convergence.png")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TABLEAU 1
+# ══════════════════════════════════════════════════════════════════════════════
+
+def run_table1():
+    print("\n" + "=" * 100)
+    print("  TABLEAU 1 : Sans Collaboration")
+    print("=" * 100)
+
+    header = (
+        f"{'Jour':<5} | {'Patients':<9} | "
+        f"{'AG':<6} {'Tabou':<6} {'RS':<6} | "
+        f"{'Agent_AG':<9} {'Agent_Tabou':<12} {'Agent_RS':<9}"
+    )
+    print(header)
+    print("-" * len(header))
+
+    results = []
+
+    for day_cfg in DAYS:
+        d = day_cfg["day"]
+        n = day_cfg["num_patients"]
+        env = _make_env(n, day_cfg["seed"])
+
+        # Métaheuristiques sans apprentissage (agent seul, pas de QL)
+        ag_val,  _  = _run(env, [AG],  CollaborationMode.ENEMIES, False)
+        tab_val, _  = _run(env, [TAB], CollaborationMode.ENEMIES, False)
+        rs_val,  _  = _run(env, [RS],  CollaborationMode.ENEMIES, False)
+
+        # Métaheuristiques avec apprentissage (agent seul + QL)
+        aag_val,  _  = _run(env, [AG],  CollaborationMode.ENEMIES, True)
+        atab_val, _  = _run(env, [TAB], CollaborationMode.ENEMIES, True)
+        ars_val,  _  = _run(env, [RS],  CollaborationMode.ENEMIES, True)
+
+        row = {
+            "day": d, "patients": n,
+            "AG": ag_val, "Tabou": tab_val, "RS": rs_val,
+            "Agent_AG": aag_val, "Agent_Tabou": atab_val, "Agent_RS": ars_val,
+        }
+        results.append(row)
+
+        print(
+            f"J{d:<4} | {n:<9} | "
+            f"{ag_val:<6.0f} {tab_val:<6.0f} {rs_val:<6.0f} | "
+            f"{aag_val:<9.0f} {atab_val:<12.0f} {ars_val:<9.0f}"
         )
-        
-        # 2. Gantt du meilleur résultat
-        if best_solution:
-            _, task_times, _ = system.env.evaluate(best_solution.sequences, return_schedule=True)
-            plot_gantt(
-                task_times, system.env.skills, system.env.num_patients,
-                title=f"Planning {scenario_name} (Cmax={best_fitness})",
-                save_path=os.path.join(OUTPUT_DIR, f"{safe_name}_gantt.png")
-            )
-            
-    return best_fitness
+
+    return results
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TABLEAU 2
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Combinaisons de collaboration du diapo
+COLLAB_COMBOS = {
+    "AG_Tabou":    [AG, TAB],
+    "AG_RS":       [AG, RS],
+    "Tabou_RS":    [TAB, RS],
+    "AG_Tabou_RS": [AG, TAB, RS],
+}
+
+
+def _run_table2_block(use_ql: bool, label: str):
+    """Bloc du tableau 2 : avec ou sans apprentissage."""
+    print(f"\n--- Tableau 2 – {label} ---")
+
+    combo_names = list(COLLAB_COMBOS.keys())
+    col_width = 12
+
+    # En-tête
+    hdr = f"{'Jour':<5} | {'Pat.':<5} | "
+    hdr += "AMIS: "
+    for c in combo_names:
+        hdr += f"{c:<{col_width}}"
+    hdr += " | ENNEMIS: "
+    for c in combo_names:
+        hdr += f"{c:<{col_width}}"
+    print(hdr)
+    print("-" * len(hdr))
+
+    results = []
+
+    for day_cfg in DAYS:
+        d = day_cfg["day"]
+        n = day_cfg["num_patients"]
+        env = _make_env(n, day_cfg["seed"])
+
+        row = {"day": d, "patients": n}
+        line = f"J{d:<4} | {n:<5} | "
+
+        # Amis
+        line += "      "
+        for cname, configs in COLLAB_COMBOS.items():
+            val, _ = _run(env, configs, CollaborationMode.FRIENDS, use_ql)
+            row[f"amis_{cname}"] = val
+            line += f"{val:<{col_width}.0f}"
+
+        line += " |          "
+
+        # Ennemis
+        for cname, configs in COLLAB_COMBOS.items():
+            val, _ = _run(env, configs, CollaborationMode.ENEMIES, use_ql)
+            row[f"ennemis_{cname}"] = val
+            line += f"{val:<{col_width}.0f}"
+
+        results.append(row)
+        print(line)
+
+    return results
+
+
+def run_table2():
+    print("\n" + "=" * 100)
+    print("  TABLEAU 2 : Avec Collaboration (Amis / Ennemis)")
+    print("=" * 100)
+
+    res_no_ql = _run_table2_block(use_ql=False, label="Sans Apprentissage")
+    res_ql    = _run_table2_block(use_ql=True,  label="Avec Apprentissage")
+    return res_no_ql, res_ql
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Main
+# ══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    print("================================================================")
-    print("   GÉNÉRATEUR DE BENCHMARK ET VISUALISATIONS")
-    print("================================================================")
+    print("=" * 100)
+    print("   BENCHMARK COMPLET – Tableaux 1 & 2 du diaporama")
+    print("=" * 100)
     setup_output_dir()
-    
-    ITERATIONS = 50 
-    
-    # --- TABLEAU 1 : SANS COLLABORATION ---
-    print("\n\n--- TABLEAU 1 : Comparaison SANS Collaboration ---")
-    print(f"{'Jour':<5} | {'AG':<8} | {'Tabou':<8} | {'RS':<8} | {'SMA_NoLearn':<12} | {'SMA_Learn':<12}")
-    print("-" * 65)
 
-    # Pour l'exemple, on ne fait qu'un seul "Jour" pour éviter de générer trop d'images
-    # Remplacez range(1, 2) par range(1, 4) pour plus de résultats
-    for day in range(1, 2): 
-        env = create_default_environment()
-        
-        # AG
-        mas_ag = MultiAgentSystem(env, mode=CollaborationMode.ENEMIES, use_qlearning=False)
-        mas_ag.add_agent('genetic', 'AG_Solo', population_size=20)
-        res_ag = run_benchmark_scenario(f"J{day}_AG_Solo", mas_ag, ITERATIONS)
-        
-        # Tabou
-        mas_tabu = MultiAgentSystem(env, mode=CollaborationMode.ENEMIES, use_qlearning=False)
-        mas_tabu.add_agent('tabu', 'Tabu_Solo', tabu_tenure=10)
-        res_tabu = run_benchmark_scenario(f"J{day}_Tabou_Solo", mas_tabu, ITERATIONS)
-        
-        # RS
-        mas_rs = MultiAgentSystem(env, mode=CollaborationMode.ENEMIES, use_qlearning=False)
-        mas_rs.add_agent('sa', 'RS_Solo', initial_temp=100)
-        res_rs = run_benchmark_scenario(f"J{day}_RS_Solo", mas_rs, ITERATIONS)
-        
-        # SMA NoLearn
-        mas_nl = MultiAgentSystem(env, mode=CollaborationMode.FRIENDS, use_qlearning=False)
-        mas_nl.add_agent('genetic', 'AG')
-        mas_nl.add_agent('tabu', 'Tabu')
-        mas_nl.add_agent('sa', 'RS')
-        res_nl = run_benchmark_scenario(f"J{day}_SMA_NoLearn", mas_nl, ITERATIONS)
-        
-        # SMA Learn
-        mas_l = MultiAgentSystem(env, mode=CollaborationMode.FRIENDS, use_qlearning=True)
-        mas_l.add_agent('genetic', 'AG')
-        mas_l.add_agent('tabu', 'Tabu')
-        mas_l.add_agent('sa', 'RS')
-        res_l = run_benchmark_scenario(f"J{day}_SMA_Learn", mas_l, ITERATIONS)
-        
-        print(f"J{day:<4} | {res_ag:<8.1f} | {res_tabu:<8.1f} | {res_rs:<8.1f} | {res_nl:<12.1f} | {res_l:<12.1f}")
+    t1 = run_table1()
+    t2_noql, t2_ql = run_table2()
 
-    print(f"\n✅ Terminé. Les graphiques ont été sauvegardés dans le dossier '{OUTPUT_DIR}/'.")
+    print("\n" + "=" * 100)
+    print("✅  Benchmark terminé.")
+    print("=" * 100)
+
+    return t1, t2_noql, t2_ql
+
 
 if __name__ == "__main__":
     main()
